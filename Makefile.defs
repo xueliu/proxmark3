@@ -37,7 +37,13 @@ FALSE = false
 TAR = tar
 TARFLAGS ?= -v --ignore-failed-read -r
 TARFLAGS += -C .. -f
-CROSS ?= arm-none-eabi-
+
+ifeq ($(PLATFORM),PM4)
+  CROSS ?= riscv64-unknown-elf-
+else
+  CROSS ?= arm-none-eabi-
+endif
+
 CC ?= gcc
 CXX ?= g++
 SH = sh

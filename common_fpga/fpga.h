@@ -18,7 +18,9 @@
 #define __FPGA_H
 
 #include <stdbool.h>
-#include <inttypes.h>
+// TODO:
+//#include <inttypes.h>
+#include <stdint.h>
 
 #define FPGA_BITSTREAM_FIXED_HEADER_SIZE    sizeof(bitparse_fixed_header)
 #define FPGA_INTERLEAVE_SIZE                288
@@ -30,7 +32,7 @@
 #define FPGA_CONFIG_SIZE                    69984L  // FPGA .bit file rounded up to next multiple of FPGA_INTERLEAVE_SIZE
 #else
 #define FPGA_TYPE "2s30vq100"
-#define FPGA_CONFIG_SIZE                    42336L  // FPGA .bit file rounded up to next multiple of FPGA_INTERLEAVE_SIZE
+#define FPGA_CONFIG_SIZE                    99999L  // TODO: 42336L  // FPGA .bit file rounded up to next multiple of FPGA_INTERLEAVE_SIZE
 #endif
 #define FPGA_RING_BUFFER_BYTES              (1024 * 30)
 #define FPGA_TRACE_SIZE                     3072

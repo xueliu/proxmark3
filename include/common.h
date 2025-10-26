@@ -92,7 +92,9 @@ extern bool g_tearoff_enabled;
 
 
 //#define RAMFUNC __attribute((long_call, section(".ramfunc")))
-#define RAMFUNC __attribute((long_call, section(".ramfunc"))) __attribute__((target("arm"))) __attribute__((noinline))
+// TODO
+//#define RAMFUNC __attribute((long_call, section(".ramfunc"))) __attribute__((target("arm"))) __attribute__((noinline))
+#define RAMFUNC
 
 #ifndef PM3_ROTR
 # define PM3_ROTR(x,n) (((uintmax_t)(x) >> (n)) | ((uintmax_t)(x) << ((sizeof(x) * 8) - (n))))
