@@ -21,7 +21,9 @@
 #ifndef __START_H
 #define __START_H
 
-#include "proxmark3_arm.h"
+// TODO
+//#include "proxmark3_arm.h"
+#include "proxmark4_riscv.h"
 #include "appmain.h"
 #ifdef WITH_COMPRESSION
 #include "lz4.h"

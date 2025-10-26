@@ -16,8 +16,13 @@
 
 -include Makefile.platform
 -include .Makefile.options.cache
+
+ifeq ($(PLATFORM),PM4)
+	include common_riscv/Makefile.hal
+else
+	include common_arm/Makefile.hal
+endif
 include Makefile.defs
-include common_arm/Makefile.hal
 
 # preserve relative DESTDIR path for subdir makes
 ifneq (,$(DESTDIR))

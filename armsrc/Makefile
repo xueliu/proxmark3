@@ -15,13 +15,16 @@
 # See LICENSE.txt for the text of the license.
 #-----------------------------------------------------------------------------
 # Makefile for armsrc, see ../common_arm/Makefile.common for common settings
+# Makefile for armsrc, see ../common_riscv/Makefile.common for common settings
 #-----------------------------------------------------------------------------
 
 # This Makefile might have been called directly, not via the root Makefile, so:
 ifeq ($(PLTNAME),)
     -include ../Makefile.platform
     -include ../.Makefile.options.cache
-    include ../common_arm/Makefile.hal
+# TODO:    
+#    include ../common_arm/Makefile.hal
+    include ../common_riscv/Makefile.hal
 # detect if there were changes in the platform definitions, requiring a clean
     ifeq ($(PLATFORM_CHANGED), true)
         $(error platform definitions have been changed, please "make clean" at the root of the project)
@@ -164,8 +167,10 @@ ARMSRC = fpgaloader.c \
 VERSIONSRC = version_pm3.c \
     fpga_version_info.c
 
+# TODO:
 # Do not move this inclusion before the definition of {THUMB,ASM,ARM}SRC
-include ../common_arm/Makefile.common
+#include ../common_arm/Makefile.common
+include ../common_riscv/Makefile.common
 
 INSTALLFW = $(OBJDIR)/fullimage.elf
 ifneq (,$(FWTAG))
@@ -195,7 +200,9 @@ fpga_version_info.c: $(FPGA_BITSTREAMS) $(FPGA_COMPRESSOR)
 
 $(OBJDIR)/fpga_all.o: $(OBJDIR)/fpga_all.bit.z
 	$(info [-] GEN $@)
-	$(Q)$(CROSS_OBJCOPY) -O elf32-littlearm -I binary -B arm --prefix-sections=fpga_all_bit $^ $@
+# TODO:!    
+#	$(Q)$(CROSS_OBJCOPY) -O elf32-littlearm -I binary -B arm --prefix-sections=fpga_all_bit $^ $@
+	$(Q)$(CROSS_OBJCOPY) -O elf32-littleriscv -I binary -B riscv --prefix-sections=fpga_all_bit $^ $@
 
 $(OBJDIR)/fpga_all.bit.z: $(FPGA_BITSTREAMS) | $(FPGA_COMPRESSOR)
 	$(info [-] GEN $@)
