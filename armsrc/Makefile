@@ -222,7 +222,8 @@ $(OBJDIR)/fullimage.stage1.elf: $(VERSIONOBJ) $(OBJDIR)/fpga_all.o $(THUMBOBJ) $
 
 $(OBJDIR)/fullimage.data.bin: $(OBJDIR)/fullimage.stage1.elf
 	$(info [-] GEN $@)
-	$(Q)$(CROSS_OBJCOPY) -O binary -I elf32-littlearm --only-section .data $^ $@
+#	$(Q)$(CROSS_OBJCOPY) -O binary -I elf32-littlearm --only-section .data $^ $@
+	$(Q)$(CROSS_OBJCOPY) -O binary -I elf32-littleriscv --only-section .data $^ $@
 
 $(OBJDIR)/fullimage.data.bin.z: $(OBJDIR)/fullimage.data.bin | $(FPGA_COMPRESSOR)
 	$(info [-] GEN $@)
@@ -235,7 +236,8 @@ endif
 $(OBJDIR)/fullimage.elf: $(OBJDIR)/fullimage.stage1.elf $(OBJDIR)/fullimage.data.bin.z
 ifneq (,$(findstring WITH_COMPRESSION,$(APP_CFLAGS)))
 	$(info [=] LD $@)
-	$(Q)$(CROSS_OBJCOPY) -O elf32-littlearm -I elf32-littlearm --strip-all --update-section .data=$(OBJDIR)/fullimage.data.bin.z $(OBJDIR)/fullimage.stage1.elf $@
+#	$(Q)$(CROSS_OBJCOPY) -O elf32-littlearm -I elf32-littlearm --strip-all --update-section .data=$(OBJDIR)/fullimage.data.bin.z $(OBJDIR)/fullimage.stage1.elf $@
+	$(Q)$(CROSS_OBJCOPY) -O elf32-littleriscv -I elf32-littleriscv --strip-all --update-section .data=$(OBJDIR)/fullimage.data.bin.z $(OBJDIR)/fullimage.stage1.elf $@    
 else
 	$(Q)$(CP) $(OBJDIR)/fullimage.stage1.elf $@
 endif
