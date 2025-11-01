@@ -111,10 +111,13 @@ CROSS_CFLAGS ?= $(DEFCFLAGS)
 # TODO: check 
 #CROSS_CFLAGS += $(ARMCFLAGS) -c $(INCLUDE) -std=c99 -DON_DEVICE $(APP_CFLAGS)
 CROSS_CFLAGS += $(RISCVCFLAGS) -c $(INCLUDE) -std=c99 -DON_DEVICE $(APP_CFLAGS)
-CROSS_CFLAGS += -march=rv32i2p0_mac -mabi=ilp32
+# -march=rv32i2p0_mac -mabi=ilp32 来自 litex,
+# -march=rv32imac -mabi=ilp32 可能是riscv gcc可以识别的架构
+CROSS_CFLAGS += -march=rv32imac -mabi=ilp32
 CROSS_CFLAGS += -D__vexriscv_smp__ -D__riscv_plic__
 
 CROSS_LDFLAGS += -nostartfiles -nodefaultlibs -Wl,-gc-sections -Wl,--build-id=none -n
+CROSS_LDFLAGS += -march=rv32imac -mabi=ilp32
 LIBS = -lgcc
 
 # Flags to generate temporary dependency files
