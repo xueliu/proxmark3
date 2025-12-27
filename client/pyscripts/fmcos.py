@@ -305,6 +305,7 @@ class FMCOS:
         data: bytes | None = None,
         le: int | None = None,
         select: bool = True,
+        keep_field: bool = True,
     ) -> tuple[bytes, int, int]:
         """
         Send an APDU command and receive response.
@@ -320,6 +321,8 @@ class FMCOS:
             data: Command data (optional)
             le: Expected response length (optional, 0x00 = max)
             select: Whether to select card first (default: True)
+            keep_field: Whether to keep RF field on after command (default: True)
+                        Set to False for the last command to trigger DropField()
 
         Returns:
             Tuple of (response_data, sw1, sw2)
@@ -339,9 +342,16 @@ class FMCOS:
         apdu_hex = apdu.hex().upper()
 
         # Send via hf 14a apdu command
-        # -s: Select card before sending (if select=True)
+        # Build flags based on select and keep_field parameters:
+        # -s: Select card before sending
         # -k: Keep field on after command
-        flags = "-sk" if select else "-k"
+        flags = ""
+        if select:
+            flags += "s"
+        if keep_field:
+            flags += "k"
+        if flags:
+            flags = "-" + flags
         cmd = f"hf 14a apdu {flags} -d {apdu_hex}"
 
         # Log outgoing APDU
@@ -494,7 +504,7 @@ class FMCOS:
     # File Selection Commands
     # -------------------------------------------------------------------------
 
-    def select_file(self, file_id: int) -> tuple[bytes, bool]:
+    def select_file(self, file_id: int, *, keep_field: bool = True) -> tuple[bytes, bool]:
         """
         Select a file by its 2-byte file identifier.
 
@@ -502,16 +512,17 @@ class FMCOS:
 
         Args:
             file_id: 2-byte file identifier (e.g., 0x3F00 for MF)
+            keep_field: Whether to keep RF field on after command
 
         Returns:
             Tuple of (FCI data, success status)
         """
         fid_bytes = bytes([(file_id >> 8) & 0xFF, file_id & 0xFF])
         data, sw1, sw2 = self.send_apdu(CLA_ISO, INS_SELECT, 0x00, 0x00,
-                                         data=fid_bytes, le=0x00)
+                                         data=fid_bytes, le=0x00, keep_field=keep_field)
         return data, self.check_sw(sw1, sw2)
 
-    def select_df(self, df_name: bytes | str) -> tuple[bytes, bool]:
+    def select_df(self, df_name: bytes | str, *, keep_field: bool = True) -> tuple[bytes, bool]:
         """
         Select a DF by its name (AID).
 
@@ -519,6 +530,7 @@ class FMCOS:
 
         Args:
             df_name: DF name as bytes or hex string
+            keep_field: Whether to keep RF field on after command
 
         Returns:
             Tuple of (FCI data, success status)
@@ -527,24 +539,27 @@ class FMCOS:
             df_name = bytes.fromhex(df_name.replace(" ", ""))
 
         data, sw1, sw2 = self.send_apdu(CLA_ISO, INS_SELECT, 0x04, 0x00,
-                                         data=df_name, le=0x00)
+                                         data=df_name, le=0x00, keep_field=keep_field)
         return data, self.check_sw(sw1, sw2)
 
-    def select_mf(self) -> tuple[bytes, bool]:
+    def select_mf(self, *, keep_field: bool = True) -> tuple[bytes, bool]:
         """
         Select the Master File (MF).
+
+        Args:
+            keep_field: Whether to keep RF field on after command
 
         Returns:
             Tuple of (FCI data, success status)
         """
-        return self.select_file(0x3F00)
+        return self.select_file(0x3F00, keep_field=keep_field)
 
     # -------------------------------------------------------------------------
     # Binary File Commands
     # -------------------------------------------------------------------------
 
     def read_binary(self, offset: int = 0, length: int = 0,
-                    sfi: int | None = None) -> tuple[bytes, bool]:
+                    sfi: int | None = None, *, keep_field: bool = True) -> tuple[bytes, bool]:
         """
         Read data from a transparent (binary) EF.
 
@@ -554,6 +569,7 @@ class FMCOS:
             offset: Byte offset within file
             length: Number of bytes to read (0 = max available)
             sfi: Short file identifier (optional, uses current file if None)
+            keep_field: Whether to keep RF field on after command
 
         Returns:
             Tuple of (read data, success status)
@@ -568,11 +584,11 @@ class FMCOS:
             p2 = offset & 0xFF
 
         data, sw1, sw2 = self.send_apdu(CLA_ISO, INS_READ_BINARY, p1, p2,
-                                         le=length)
+                                         le=length, keep_field=keep_field)
         return data, self.check_sw(sw1, sw2)
 
     def update_binary(self, offset: int, data: bytes,
-                      sfi: int | None = None) -> bool:
+                      sfi: int | None = None, *, keep_field: bool = True) -> bool:
         """
         Write data to a transparent (binary) EF.
 
@@ -582,6 +598,7 @@ class FMCOS:
             offset: Byte offset within file
             data: Data to write
             sfi: Short file identifier (optional, uses current file if None)
+            keep_field: Whether to keep RF field on after command
 
         Returns:
             True if write succeeded
@@ -594,7 +611,7 @@ class FMCOS:
             p2 = offset & 0xFF
 
         _, sw1, sw2 = self.send_apdu(CLA_ISO, INS_UPDATE_BINARY, p1, p2,
-                                      data=data)
+                                      data=data, keep_field=keep_field)
         return self.check_sw(sw1, sw2)
 
     # -------------------------------------------------------------------------
@@ -602,7 +619,7 @@ class FMCOS:
     # -------------------------------------------------------------------------
 
     def read_record(self, record_num: int, sfi: int | None = None,
-                    length: int = 0) -> tuple[bytes, bool]:
+                    length: int = 0, *, keep_field: bool = True) -> tuple[bytes, bool]:
         """
         Read a record from a record-oriented EF.
 
@@ -612,6 +629,7 @@ class FMCOS:
             record_num: Record number (1-indexed)
             sfi: Short file identifier (optional, uses current file if None)
             length: Expected record length (0 = max)
+            keep_field: Whether to keep RF field on after command
 
         Returns:
             Tuple of (record data, success status)
@@ -626,11 +644,11 @@ class FMCOS:
             p2 = 0x04
 
         data, sw1, sw2 = self.send_apdu(CLA_ISO, INS_READ_RECORD, p1, p2,
-                                         le=length)
+                                         le=length, keep_field=keep_field)
         return data, self.check_sw(sw1, sw2)
 
     def update_record(self, record_num: int, data: bytes,
-                      sfi: int | None = None) -> bool:
+                      sfi: int | None = None, *, keep_field: bool = True) -> bool:
         """
         Update a record in a record-oriented EF.
 
@@ -640,6 +658,7 @@ class FMCOS:
             record_num: Record number (1-indexed)
             data: New record data
             sfi: Short file identifier (optional)
+            keep_field: Whether to keep RF field on after command
 
         Returns:
             True if update succeeded
@@ -652,7 +671,7 @@ class FMCOS:
             p2 = 0x04
 
         _, sw1, sw2 = self.send_apdu(CLA_ISO, INS_UPDATE_RECORD, p1, p2,
-                                      data=data)
+                                      data=data, keep_field=keep_field)
         return self.check_sw(sw1, sw2)
 
     def append_record(self, data: bytes, sfi: int | None = None) -> bool:
@@ -681,7 +700,7 @@ class FMCOS:
     # Security Commands
     # -------------------------------------------------------------------------
 
-    def get_challenge(self, length: int = 8) -> tuple[bytes, bool]:
+    def get_challenge(self, length: int = 8, *, keep_field: bool = True) -> tuple[bytes, bool]:
         """
         Request a random number from the card.
 
@@ -689,6 +708,7 @@ class FMCOS:
 
         Args:
             length: Requested random number length (4 or 8)
+            keep_field: Whether to keep RF field on after command
 
         Returns:
             Tuple of (random number, success status)
@@ -697,10 +717,11 @@ class FMCOS:
             length = 8
 
         data, sw1, sw2 = self.send_apdu(CLA_ISO, INS_GET_CHALLENGE, 0x00, 0x00,
-                                         le=length)
+                                         le=length, keep_field=keep_field)
         return data, self.check_sw(sw1, sw2)
 
-    def external_auth(self, key_id: int, cryptogram: bytes, select: bool = True) -> bool:
+    def external_auth(self, key_id: int, cryptogram: bytes,
+                      select: bool = True, *, keep_field: bool = True) -> bool:
         """
         Perform external authentication.
 
@@ -713,6 +734,7 @@ class FMCOS:
             key_id: Key identifier for external auth key (type 39)
             cryptogram: 8-byte encrypted random number
             select: Whether to select card first (default: True)
+            keep_field: Whether to keep RF field on after command
 
         Returns:
             True if authentication succeeded
@@ -722,11 +744,11 @@ class FMCOS:
             return False
 
         _, sw1, sw2 = self.send_apdu(CLA_ISO, INS_EXTERNAL_AUTH, 0x00, key_id,
-                                      data=cryptogram, select=select)
+                                      data=cryptogram, select=select, keep_field=keep_field)
         return self.check_sw(sw1, sw2)
 
     def internal_auth(self, key_id: int, data: bytes,
-                      operation: int = 0x00) -> tuple[bytes, bool]:
+                      operation: int = 0x00, *, keep_field: bool = True) -> tuple[bytes, bool]:
         """
         Perform internal authentication / DES operation.
 
@@ -736,15 +758,16 @@ class FMCOS:
             key_id: DES key identifier
             data: Data for DES operation
             operation: 0x00=encrypt, 0x01=decrypt, 0x02=MAC
+            keep_field: Whether to keep RF field on after command
 
         Returns:
             Tuple of (result data, success status)
         """
         resp, sw1, sw2 = self.send_apdu(CLA_ISO, INS_INTERNAL_AUTH, operation,
-                                         key_id, data=data)
+                                         key_id, data=data, keep_field=keep_field)
         return resp, self.check_sw(sw1, sw2)
 
-    def verify_pin(self, key_id: int, pin: bytes | str) -> tuple[int, bool]:
+    def verify_pin(self, key_id: int, pin: bytes | str, *, keep_field: bool = True) -> tuple[int, bool]:
         """
         Verify a PIN/password.
 
@@ -753,6 +776,7 @@ class FMCOS:
         Args:
             key_id: PIN key identifier (type 3A)
             pin: PIN value as bytes or ASCII string
+            keep_field: Whether to keep RF field on after command
 
         Returns:
             Tuple of (retries left or -1 if ok, success status)
@@ -761,7 +785,7 @@ class FMCOS:
             pin = pin.encode("ascii")
 
         _, sw1, sw2 = self.send_apdu(CLA_ISO, INS_VERIFY, 0x00, key_id,
-                                      data=pin)
+                                      data=pin, keep_field=keep_field)
 
         if self.check_sw(sw1, sw2):
             return -1, True
@@ -773,7 +797,7 @@ class FMCOS:
         return 0, False
 
     def write_key(self, key_id: int, key_data: bytes,
-                  add_key: bool = True) -> bool:
+                  add_key: bool = True, *, keep_field: bool = True) -> bool:
         """
         Add or modify a key in the key file.
 
@@ -783,6 +807,7 @@ class FMCOS:
             key_id: Key identifier
             key_data: Key data including type, permissions, etc.
             add_key: True to add new key (P1=01), False to modify (P1=key type)
+            keep_field: Whether to keep RF field on after command
 
         Returns:
             True if operation succeeded
@@ -790,14 +815,14 @@ class FMCOS:
         p1 = 0x01 if add_key else key_data[0]
 
         _, sw1, sw2 = self.send_apdu(CLA_PBOC, INS_WRITE_KEY, p1, key_id,
-                                      data=key_data)
+                                      data=key_data, keep_field=keep_field)
         return self.check_sw(sw1, sw2)
 
     # -------------------------------------------------------------------------
     # File Management Commands
     # -------------------------------------------------------------------------
 
-    def create_file(self, file_id: int, file_info: bytes) -> bool:
+    def create_file(self, file_id: int, file_info: bytes, *, keep_field: bool = True) -> bool:
         """
         Create a new file (MF/DF/EF).
 
@@ -806,6 +831,7 @@ class FMCOS:
         Args:
             file_id: 2-byte file identifier
             file_info: File control information (type, size, permissions, etc.)
+            keep_field: Whether to keep RF field on after command
 
         Returns:
             True if creation succeeded
@@ -814,10 +840,10 @@ class FMCOS:
         p2 = file_id & 0xFF
 
         _, sw1, sw2 = self.send_apdu(CLA_PBOC, INS_CREATE_FILE, p1, p2,
-                                      data=file_info)
+                                      data=file_info, keep_field=keep_field)
         return self.check_sw(sw1, sw2)
 
-    def erase_df(self) -> bool:
+    def erase_df(self, *, keep_field: bool = True) -> bool:
         """
         Erase all files under current DF.
 
@@ -825,18 +851,21 @@ class FMCOS:
 
         WARNING: This is destructive! Use with caution.
 
+        Args:
+            keep_field: Whether to keep RF field on after command
+
         Returns:
             True if erase succeeded
         """
         _, sw1, sw2 = self.send_apdu(CLA_PBOC, INS_ERASE_DF, 0x00, 0x00,
-                                      data=b"")
+                                      data=b"", keep_field=keep_field)
         return self.check_sw(sw1, sw2)
 
     # -------------------------------------------------------------------------
     # Electronic Purse/Passbook Commands
     # -------------------------------------------------------------------------
 
-    def get_balance(self, app_type: int = 0x02) -> tuple[int, bool]:
+    def get_balance(self, app_type: int = 0x02, *, keep_field: bool = True) -> tuple[int, bool]:
         """
         Read electronic purse or passbook balance.
 
@@ -844,12 +873,13 @@ class FMCOS:
 
         Args:
             app_type: 0x01 for e-passbook, 0x02 for e-purse
+            keep_field: Whether to keep RF field on after command
 
         Returns:
             Tuple of (balance in cents, success status)
         """
         data, sw1, sw2 = self.send_apdu(CLA_PBOC, INS_GET_BALANCE, 0x00,
-                                         app_type, le=0x04)
+                                         app_type, le=0x04, keep_field=keep_field)
 
         if self.check_sw(sw1, sw2) and len(data) >= 4:
             # Balance is 4 bytes big-endian
@@ -1340,11 +1370,14 @@ class FMCOS:
     # Utility Methods
     # -------------------------------------------------------------------------
 
-    def get_card_info(self) -> dict:
+    def get_card_info(self, *, keep_field: bool = True) -> dict:
         """
         Read and parse card information.
 
         Selects MF and returns parsed FCI data.
+
+        Args:
+            keep_field: Whether to keep RF field on after command
 
         Returns:
             Dictionary with card information
@@ -1384,8 +1417,8 @@ class FMCOS:
             if "ATS:" in line or "ISO/IEC 14443-4" in line:
                 info["iso14443_4"] = True
 
-        # Try to select MF
-        fci, success = self.select_mf()
+        # Try to select MF (use keep_field to control field state)
+        fci, success = self.select_mf(keep_field=keep_field)
         info["mf_selected"] = success
         if success and fci:
             info["mf_fci"] = fci.hex().upper()
