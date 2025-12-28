@@ -35,6 +35,12 @@ ifeq ($(DEFSBEENHERE),)
     $(error Can't find Makefile.defs)
 endif
 
+PICOLIBC_DIRECTORY=common_riscv/sipeed_tang_nano_20k/build/sipeed_tang_nano_20k/software/picolibc_src/
+#LIBBASE_DIRECTORY
+#SOC_DIRECTORY
+#BUILDINC_DIRECTORY
+#CPU_DIRECTORY
+
 CROSS_CC = $(CROSS)gcc
 CROSS_LD = $(CROSS)gcc
 CROSS_OBJCOPY = $(CROSS)objcopy
@@ -42,7 +48,9 @@ CROSS_OBJCOPY = $(CROSS)objcopy
 OBJDIR = obj
 
 #INCLUDE = -I../include -I../common_arm -I../common_fpga -I../common -I.
-INCLUDE = -I../include -I../common_riscv -I../common_fpga -I../common -I.
+INCLUDE = -I../include -I../common_riscv -I../common_fpga -I../common -I. ¸\
+			-I$(PICOLIBC_DIRECTORY)/newlib/libc/tinystdio \
+			-I$(PICOLIBC_DIRECTORY)/newlib/libc/include \
 
 
 # Also search prerequisites in the common directory (for usb.c), the fpga directory (for fpga.bit), and the lz4 directory
