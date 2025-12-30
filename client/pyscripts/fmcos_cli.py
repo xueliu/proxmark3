@@ -88,24 +88,60 @@ def cmd_info(fmcos: FMCOS, _args: argparse.Namespace) -> int:
 
 def cmd_select(fmcos: FMCOS, args: argparse.Namespace) -> int:
     """
-    Select a file by ID.
+    Select a file by file identifier (FID) or by DF name (AID).
+
+    SELECT command supports two modes (per FMCOS 7.4):
+    - P1=00: Select by 2-byte file identifier (current directory)
+    - P1=04: Select by DF name (application identifier)
 
     Args:
         fmcos: FMCOS interface instance.
-        args: Command line arguments containing file ID.
+        args: Command line arguments containing:
+              - file: File ID (hex) or DF name (hex string)
+              - name: If True, select by DF name (P1=04)
 
     Returns:
         0 on success, 1 on failure.
     """
-    file_id = int(args.file, 16)
-    log(f"Selecting file: {file_id:04X}")
+    selector = args.file.replace(" ", "")
+    use_name = getattr(args, 'name', False)
 
-    fci, success = fmcos.select_file(file_id, keep_field=False)
+    if use_name:
+        # Select by DF name (P1=04)
+        log(f"Selecting by DF name: {selector}")
+        fci, success = fmcos.select_df(selector, keep_field=False)
+    else:
+        # Select by file identifier (P1=00)
+        try:
+            file_id = int(selector, 16)
+        except ValueError:
+            log_error(f"Invalid file ID: {selector}")
+            return 1
+
+        if file_id > 0xFFFF:
+            log_error("File ID must be 2 bytes (0000-FFFF)")
+            return 1
+
+        log(f"Selecting by file ID: {file_id:04X}")
+        fci, success = fmcos.select_file(file_id, keep_field=False)
 
     if success:
-        log_success("File selected")
+        log_success("File/DF selected successfully")
         if fci:
-            log(f"FCI: {fci.hex().upper()}")
+            # Parse and display FCI
+            parsed = fmcos.parse_fci(fci)
+            log(f"FCI (raw): {parsed['raw']}")
+
+            if parsed['df_name']:
+                log(f"  DF Name: {color(parsed['df_name'], fg='cyan')}")
+                if parsed['df_name'] != parsed['df_name_hex']:
+                    log(f"  DF Name (hex): {parsed['df_name_hex']}")
+
+            if parsed['dir_sfi'] is not None:
+                log(f"  DIR SFI: {parsed['dir_sfi']:02X}")
+
+            if parsed['issuer_data']:
+                log(f"  Issuer Data: {parsed['issuer_data']}")
         return 0
     else:
         sw1, sw2 = fmcos.last_sw
@@ -420,8 +456,10 @@ def cmd_fast_ext_auth(fmcos: FMCOS, args: argparse.Namespace) -> int:
 
     log(f"  Encrypted: {encrypted_rnd.hex().upper()}")
 
-    # Step 3: Authenticate (select=False to maintain session, keep_field=False to close)
-    success = fmcos.external_auth(key_id, encrypted_rnd, select=False, keep_field=False)
+    # Step 3: Authenticate (select=False to maintain session)
+    # Use args.keep to control whether to keep field on for next command
+    keep = getattr(args, 'keep', False)
+    success = fmcos.external_auth(key_id, encrypted_rnd, select=False, keep_field=keep)
 
     if success:
         log_success("External authentication successful")
@@ -495,10 +533,27 @@ def cmd_write_key(fmcos: FMCOS, args: argparse.Namespace) -> int:
 
     log(f"Writing key {key_id:02X}, {len(key_data)} bytes")
 
-    success = fmcos.write_key(key_id, key_data, add_key=True, keep_field=False)
+    keep = getattr(args, 'keep', False)
+    no_select = getattr(args, 'no_select', False)
+    modify_mode = getattr(args, 'modify', False)
+    key_type_arg = getattr(args, 'key_type', None)
+
+    key_type = int(key_type_arg, 16) if key_type_arg else None
+
+    if modify_mode and key_type is None:
+        # Try to infer key type from data byte 0 if it looks like a known type
+        if len(key_data) > 0 and key_data[0] in [0x39, 0x3A, 0x37, 0x36, 0x38]:
+             key_type = key_data[0]
+             log(f"Inferred key type {key_type:02X} from data")
+        else:
+             log_error("Key type required for modification (--key-type)")
+             return 1
+
+    success = fmcos.write_key(key_id, key_data, add_key=not modify_mode, key_type=key_type,
+                              select=not no_select, keep_field=keep)
 
     if success:
-        log_success("Key written")
+        log_success("Key written/updated successfully")
         return 0
     else:
         sw1, sw2 = fmcos.last_sw
@@ -508,34 +563,130 @@ def cmd_write_key(fmcos: FMCOS, args: argparse.Namespace) -> int:
 
 def cmd_create(fmcos: FMCOS, args: argparse.Namespace) -> int:
     """
-    Create file.
+    Create a file (DF, EF, Key File, etc.) per FMCOS 7.13.
+
+    File types supported:
+    - df: Directory file (requires DF name via -d)
+    - binary: Binary/transparent EF
+    - fixed: Fixed-length record EF
+    - variable: Variable-length record EF
+    - cyclic: Cyclic record EF
+    - key: Key file
+    - raw: Raw file info provided via -d (original behavior)
 
     Args:
         fmcos: FMCOS interface instance.
-        args: Command line arguments containing file ID and file info.
+        args: Command line arguments:
+              - file: File ID in hex
+              - filetype: File type (df, binary, fixed, variable, cyclic, key, raw)
+              - data: DF name (for df) or raw file info (for raw)
+              - length: File size or record length
+              - record: Number of records (for record types)
 
     Returns:
         0 on success, 1 on failure.
     """
     file_id = int(args.file, 16)
+    file_type = getattr(args, 'filetype', 'raw')
     data_hex = args.data
+    size = getattr(args, 'length', 256)
+    num_records = getattr(args, 'record', 10)
 
-    if not data_hex:
-        log_error("File info required (-d)")
+    # Default permissions (free access)
+    read_perm = 0x00
+    write_perm = 0x00
+    create_perm = 0x00
+    erase_perm = 0x00
+
+    file_info = None
+
+    if file_type == 'raw':
+        # Original behavior: raw file info
+        if not data_hex:
+            log_error("File info required (-d) for raw file type")
+            return 1
+        try:
+            file_info = bytes.fromhex(data_hex.replace(" ", ""))
+        except ValueError:
+            log_error("Invalid hex data for file info")
+            return 1
+        log(f"Creating file {file_id:04X} with raw info")
+
+    elif file_type == 'df':
+        # Directory file
+        df_name = b""
+        if data_hex:
+            try:
+                df_name = bytes.fromhex(data_hex.replace(" ", ""))
+            except ValueError:
+                # Try as ASCII
+                df_name = data_hex.encode('ascii')
+
+        app_file_id = 0x00
+        if size == 0:
+            size = 0xFFFF  # Maximum for MF
+
+        file_info = FMCOS.build_file_info_df(
+            size=size if size else 0x1000,
+            create_perm=create_perm,
+            erase_perm=erase_perm,
+            app_file_id=app_file_id,
+            df_name=df_name
+        )
+        log(f"Creating DF {file_id:04X}, size={size}, name={df_name.hex() if df_name else 'default'}")
+
+    elif file_type == 'binary':
+        # Binary EF
+        file_info = FMCOS.build_file_info_binary(
+            size=size if size else 256,
+            read_perm=read_perm,
+            write_perm=write_perm
+        )
+        log(f"Creating Binary EF {file_id:04X}, size={size}")
+
+    elif file_type in ('fixed', 'variable', 'cyclic'):
+        # Record EF
+        type_map = {
+            'fixed': 0x2A,
+            'variable': 0x2C,
+            'cyclic': 0x2E,
+        }
+        record_len = size if size else 32
+
+        file_info = FMCOS.build_file_info_record(
+            record_type=type_map[file_type],
+            num_records=num_records if num_records >= 2 else 10,
+            record_length=record_len,
+            read_perm=read_perm,
+            write_perm=write_perm
+        )
+        log(f"Creating {file_type.capitalize()} Record EF {file_id:04X}, "
+            f"records={num_records}, length={record_len}")
+
+    elif file_type == 'key':
+        # Key file
+        num_keys = size if size else 16
+        file_info = FMCOS.build_file_info_key(
+            num_keys=num_keys,
+            df_sfi=0x00,  # DDF
+            add_perm=0x00
+        )
+        log(f"Creating Key File {file_id:04X}, capacity={num_keys} keys")
+
+    else:
+        log_error(f"Unknown file type: {file_type}")
+        log("Valid types: df, binary, fixed, variable, cyclic, key, raw")
         return 1
 
-    try:
-        file_info = bytes.fromhex(data_hex)
-    except ValueError:
-        log_error("Invalid hex data")
-        return 1
+    # Display file info being sent
+    log(f"File info: {file_info.hex().upper()}")
 
-    log(f"Creating file {file_id:04X}")
-
-    success = fmcos.create_file(file_id, file_info, keep_field=False)
+    keep = getattr(args, 'keep', False)
+    no_select = getattr(args, 'no_select', False)
+    success = fmcos.create_file(file_id, file_info, select=not no_select, keep_field=keep)
 
     if success:
-        log_success("File created")
+        log_success("File created successfully")
         return 0
     else:
         sw1, sw2 = fmcos.last_sw
@@ -543,7 +694,7 @@ def cmd_create(fmcos: FMCOS, args: argparse.Namespace) -> int:
         return 1
 
 
-def cmd_erase_df(fmcos: FMCOS, _args: argparse.Namespace) -> int:
+def cmd_erase_df(fmcos: FMCOS, args: argparse.Namespace) -> int:
     """
     Erase current DF (DANGEROUS!).
 
@@ -557,7 +708,9 @@ def cmd_erase_df(fmcos: FMCOS, _args: argparse.Namespace) -> int:
     log_warn("WARNING: This will erase all files in current DF!")
     log("Erasing DF...")
 
-    success = fmcos.erase_df(keep_field=False)
+    keep = getattr(args, 'keep', False)
+    no_select = getattr(args, 'no_select', False)
+    success = fmcos.erase_df(select=not no_select, keep_field=keep)
 
     if success:
         log_success("DF erased")
@@ -893,12 +1046,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  script run fmcos_cli -c info               Display card information
-  script run fmcos_cli -c select -f 3F00     Select MF
-  script run fmcos_cli -c read_bin -l 16     Read 16 bytes
-  script run fmcos_cli -c fast_ext_auth -k 00 -d FFFFFFFFFFFFFFFF  Fast auth
-  script run fmcos_cli -c test               Run test suite
-  script run fmcos_cli -c explore            Explore file system
+  script run fmcos_cli -c info                          Display card information
+  script run fmcos_cli -c select -f 3F00                Select MF by FID (P1=00)
+  script run fmcos_cli -c select -f A000000003869807 --name   Select ADF by name (P1=04)
+  script run fmcos_cli -c read_bin -l 16                Read 16 bytes
+  script run fmcos_cli -c create -f 0001 --filetype binary -l 256   Create 256-byte binary EF
+  script run fmcos_cli -c create -f DF01 --filetype df -d "MyApp"   Create DF with name
+  script run fmcos_cli -c fast_ext_auth -k 00 -d FFFFFFFFFFFFFFFF   Fast auth
+  script run fmcos_cli -c test                          Run test suite
         """,
     )
 
@@ -911,16 +1066,27 @@ Examples:
         default="info",
         help="Command to execute (default: info)",
     )
-    parser.add_argument("-f", "--file", default="3F00", help="File ID in hex")
+    parser.add_argument("-f", "--file", default="3F00", help="File ID (hex) or DF name")
+    parser.add_argument("-n", "--name", action="store_true",
+                        help="Select by DF name (P1=04) instead of file ID (P1=00)")
+    parser.add_argument("--filetype", default="raw",
+                        choices=["df", "binary", "fixed", "variable", "cyclic", "key", "raw"],
+                        help="File type for create command (default: raw)")
     parser.add_argument("-o", "--offset", type=int, default=0, help="Byte offset")
-    parser.add_argument("-l", "--length", type=int, default=0, help="Bytes to read")
-    parser.add_argument("-d", "--data", default="", help="Hex data for write ops")
-    parser.add_argument("-r", "--record", type=int, default=1, help="Record number")
+    parser.add_argument("-l", "--length", type=int, default=0, help="File/record size or bytes to read")
+    parser.add_argument("-d", "--data", default="", help="Hex data, DF name, or raw file info")
+    parser.add_argument("-r", "--record", type=int, default=1, help="Record number or count")
     parser.add_argument("-s", "--sfi", type=int, default=None, help="Short File ID")
     parser.add_argument("-k", "--key", default="00", help="Key ID in hex")
     parser.add_argument("-p", "--pin", default="", help="PIN value")
     parser.add_argument("-t", "--type", default="02", help="App type (01/02)")
     parser.add_argument("-a", "--amount", type=int, default=0, help="Transaction amount")
+    parser.add_argument("--keep", action="store_true",
+                        help="Keep RF field on after command (for multi-command sessions)")
+    parser.add_argument("--no-select", dest="no_select", action="store_true",
+                        help="Don't re-select card (use with --keep to maintain auth session)")
+    parser.add_argument("--modify", action="store_true", help="Modify existing key (default: Add key)")
+    parser.add_argument("--key-type", default=None, help="Key type for modification (hex)")
     parser.add_argument("--debug", action="store_true", help="Enable debug output")
 
     return parser.parse_args(argv)
