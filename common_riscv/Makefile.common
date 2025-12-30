@@ -66,7 +66,7 @@ INCLUDES = ../include/proxmark4_riscv.h ../include/at91sam7s512.h ../include/con
 # TODO: delete ARMCFLAGS
 #ARMCFLAGS = -mthumb-interwork -fno-builtin
 # -ffreestanding 表示当前环境没有标准库，不做标准库假设。
-RISCVCFLAGS = -fno-builtin -ffreestanding
+RISCVCFLAGS = -fno-builtin # -ffreestanding 似乎是不需要的
 DEFCFLAGS = -Wall -Werror -Os -pedantic -fstrict-aliasing -pipe
 
 # Some more warnings we want as errors:
@@ -122,11 +122,11 @@ CROSS_CFLAGS ?= $(DEFCFLAGS)
 CROSS_CFLAGS += $(RISCVCFLAGS) -c $(INCLUDE) -std=c99 -DON_DEVICE $(APP_CFLAGS)
 # -march=rv32i2p0_mac -mabi=ilp32 来自 litex,
 # -march=rv32imac -mabi=ilp32 可能是riscv gcc可以识别的架构
-CROSS_CFLAGS += -march=rv32imac -mabi=ilp32
+CROSS_CFLAGS += -march=rv32i2p0_mac -mabi=ilp32
 CROSS_CFLAGS += -D__vexriscv_smp__ -D__riscv_plic__
 
 CROSS_LDFLAGS += -nostartfiles -nodefaultlibs -Wl,-gc-sections -Wl,--build-id=none -n
-CROSS_LDFLAGS += -march=rv32imac -mabi=ilp32
+CROSS_LDFLAGS += -march=rv32i2p0_mac -mabi=ilp32
 LIBS = -lgcc
 
 # Flags to generate temporary dependency files
