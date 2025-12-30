@@ -79,6 +79,32 @@ INS_RELOAD_PIN = 0x5E
 INS_WRITE_KEY = 0xD4
 INS_CREATE_FILE = 0xE0
 
+# File Types for CREATE FILE (FMCOS 7.13)
+# Base file types (BYTE1 of file control info)
+FILE_TYPE_BINARY = 0x28        # Binary EF (transparent file)
+FILE_TYPE_FIXED_RECORD = 0x2A  # Fixed-length record EF
+FILE_TYPE_VARIABLE_RECORD = 0x2C  # Variable-length record EF
+FILE_TYPE_CYCLIC = 0x2E        # Cyclic record EF
+FILE_TYPE_PBOC_EDEP = 0x2F     # PBOC Electronic purse/passbook
+FILE_TYPE_KEY = 0x3F           # Key file
+FILE_TYPE_DF = 0x38            # Directory file (DF/MF)
+
+# File type modifiers (OR with base type)
+FILE_MOD_MAC_WRITE = 0x80      # Plaintext MAC write mode
+FILE_MOD_ENCRYPTED = 0x40      # Encrypted write mode
+
+# Key Types for WRITE KEY (FMCOS 7.12)
+KEY_TYPE_INTERNAL = 0x34       # Internal key (authentication/encryption)
+KEY_TYPE_PIN = 0x3A            # PIN / Password key
+KEY_TYPE_FILE_PROT = 0x36      # File line protection key
+KEY_TYPE_OVERDRAW = 0x3C       # Update overdraw limit key
+KEY_TYPE_UNLOCK_PIN = 0x37     # Unlock PIN key (PUK)
+KEY_TYPE_CREDIT_PULL = 0x3D    # Credit pull (load cancellation) key
+KEY_TYPE_RELOAD_PIN = 0x38     # Reload PIN key
+KEY_TYPE_CONSUME = 0x3E        # Consumption key
+KEY_TYPE_EXT_AUTH = 0x39       # External authentication key
+KEY_TYPE_LOAD = 0x3F           # Load key
+
 # Status Words
 SW_SUCCESS = (0x90, 0x00)
 SW_FILE_NOT_FOUND = (0x6A, 0x82)
@@ -331,7 +357,8 @@ class FMCOS:
         apdu = bytes([cla, ins, p1, p2])
 
         # Add Lc and data if present
-        if data:
+        # Note: Use 'is not None' to include Lc=00 when data is empty bytes
+        if data is not None:
             apdu += bytes([len(data)]) + data
 
         # Add Le if present
@@ -465,6 +492,127 @@ class FMCOS:
             return f"Wrong Le, expected {sw2} bytes"
 
         return f"Unknown status: {sw1:02X}{sw2:02X}"
+
+    @staticmethod
+    def parse_tlv(data: bytes) -> dict:
+        """
+        Parse TLV (Tag-Length-Value) encoded data.
+
+        Supports both single-byte and two-byte tags (e.g., 9F0C).
+
+        Args:
+            data: Raw TLV data bytes
+
+        Returns:
+            Dictionary mapping tag (int) to value (bytes)
+        """
+        result = {}
+        offset = 0
+
+        while offset < len(data):
+            if offset >= len(data):
+                break
+
+            # Read tag (1 or 2 bytes)
+            tag = data[offset]
+            offset += 1
+
+            # Check for two-byte tag (tag byte has bits 5-1 all set)
+            if (tag & 0x1F) == 0x1F:
+                if offset >= len(data):
+                    break
+                tag = (tag << 8) | data[offset]
+                offset += 1
+
+            # Read length
+            if offset >= len(data):
+                break
+            length = data[offset]
+            offset += 1
+
+            # Handle multi-byte length
+            if length & 0x80:
+                num_bytes = length & 0x7F
+                if offset + num_bytes > len(data):
+                    break
+                length = int.from_bytes(data[offset:offset + num_bytes], 'big')
+                offset += num_bytes
+
+            # Read value
+            if offset + length > len(data):
+                break
+            value = data[offset:offset + length]
+            offset += length
+
+            result[tag] = value
+
+        return result
+
+    def parse_fci(self, fci_data: bytes) -> dict:
+        """
+        Parse File Control Information (FCI) from SELECT response.
+
+        FCI structure (TLV format):
+        - 6F: FCI Template (contains nested TLVs)
+          - 84: DF Name (AID/application identifier)
+          - A5: FCI Proprietary Data
+            - 88: SFI of directory elementary file (DIR)
+            - 9F0C: Issuer discretionary data (optional)
+
+        Args:
+            fci_data: Raw FCI data from SELECT response
+
+        Returns:
+            Dictionary with parsed FCI fields:
+            - 'raw': Original hex data
+            - 'df_name': DF name (decoded as ASCII if possible)
+            - 'df_name_hex': DF name as hex
+            - 'dir_sfi': Short file identifier of DIR file
+            - 'issuer_data': Issuer discretionary data (if present)
+        """
+        result = {
+            'raw': fci_data.hex().upper(),
+            'df_name': '',
+            'df_name_hex': '',
+            'dir_sfi': None,
+            'issuer_data': '',
+        }
+
+        if not fci_data or len(fci_data) < 2:
+            return result
+
+        # Parse outer TLV
+        tlv = self.parse_tlv(fci_data)
+
+        # Check for FCI Template (6F)
+        if 0x6F in tlv:
+            fci_template = self.parse_tlv(tlv[0x6F])
+
+            # Extract DF Name (84)
+            if 0x84 in fci_template:
+                df_name = fci_template[0x84]
+                result['df_name_hex'] = df_name.hex().upper()
+                # Try to decode as ASCII
+                try:
+                    result['df_name'] = df_name.decode('ascii')
+                except (UnicodeDecodeError, ValueError):
+                    result['df_name'] = result['df_name_hex']
+
+            # Extract FCI Proprietary Data (A5)
+            if 0xA5 in fci_template:
+                proprietary = self.parse_tlv(fci_template[0xA5])
+
+                # Extract DIR SFI (88)
+                if 0x88 in proprietary:
+                    sfi_bytes = proprietary[0x88]
+                    if sfi_bytes:
+                        result['dir_sfi'] = sfi_bytes[0]
+
+                # Extract Issuer Data (9F0C)
+                if 0x9F0C in proprietary:
+                    result['issuer_data'] = proprietary[0x9F0C].hex().upper()
+
+        return result
 
     # -------------------------------------------------------------------------
     # Card Initialization
@@ -796,8 +944,81 @@ class FMCOS:
 
         return 0, False
 
+    @staticmethod
+    def build_key_data_general(key_type: int, key_value: bytes,
+                               usage_perm: int = 0xF0, modify_perm: int = 0xFF,
+                               key_version: int = 0x00, algorithm: int = 0x00) -> bytes:
+        """
+        Build key data for CASE 1 (General Keys).
+        Types: 30, 31, 32, 34, 35, 3C, 3D, 3E, 3F, 36, 38
+        Data: [UsePerm] [ModPerm] [Version] [Algo] [Key]
+        """
+        if key_type in (0x36, 0x38):
+             # Case 5: File protection / Reload PIN key
+             # Data: 36/38 [UsePerm] [ModPerm] FF [ErrorCount] [Key]
+             # Note: This logic might need adjustment if Case 5 structure is strict
+             # Let's handle Case 5 separately if needed or adapt here
+             pass
+
+        info = bytes([usage_perm, modify_perm, key_version, algorithm])
+        info += key_value
+        return info
+
+    @staticmethod
+    def build_key_data_ext_auth(key_value: bytes, usage_perm: int = 0xF0,
+                                modify_perm: int = 0xFF, subsequent_state: int = 0x0A,
+                                error_count: int = 0xFF) -> bytes:
+        """
+        Build key data for CASE 2 (External Auth Key).
+        Type: 39
+        Data: 39 [UsePerm] [ModPerm] [SubState] [ErrCount] [Key]
+        """
+        info = bytes([KEY_TYPE_EXT_AUTH, usage_perm, modify_perm, subsequent_state, error_count])
+        info += key_value
+        return info
+
+    @staticmethod
+    def build_key_data_pin(pin_value: bytes | str, usage_perm: int = 0xF0,
+                           error_count: int = 0xFF, subsequent_state: int = 0xFF) -> bytes:
+        """
+        Build key data for CASE 3 (PIN Key).
+        Type: 3A
+        Data: 3A [UsePerm] EF [SubState] [ErrCount] [PIN]
+        """
+        if isinstance(pin_value, str):
+            pin_value = pin_value.encode('ascii')
+
+        info = bytes([KEY_TYPE_PIN, usage_perm, 0xEF, subsequent_state, error_count])
+        info += pin_value
+        return info
+
+    @staticmethod
+    def build_key_data_unlock_pin(key_value: bytes, usage_perm: int = 0xF0,
+                                  modify_perm: int = 0xFF, error_count: int = 0xFF) -> bytes:
+        """
+        Build key data for CASE 4 (Unlock PIN Key).
+        Type: 37
+        Data: 37 [UsePerm] [ModPerm] FF [ErrCount] [Key]
+        """
+        info = bytes([KEY_TYPE_UNLOCK_PIN, usage_perm, modify_perm, 0xFF, error_count])
+        info += key_value
+        return info
+
+    @staticmethod
+    def build_key_data_protection(key_type: int, key_value: bytes, usage_perm: int = 0xF0,
+                                  modify_perm: int = 0xFF, error_count: int = 0xFF) -> bytes:
+        """
+        Build key data for CASE 5 (File Protection / Reload PIN Key).
+        Types: 36, 38
+        Data: 36/38 [UsePerm] [ModPerm] FF [ErrCount] [Key]
+        """
+        info = bytes([key_type, usage_perm, modify_perm, 0xFF, error_count])
+        info += key_value
+        return info
+
     def write_key(self, key_id: int, key_data: bytes,
-                  add_key: bool = True, *, keep_field: bool = True) -> bool:
+                  add_key: bool = True, key_type: int | None = None,
+                  *, select: bool = True, keep_field: bool = True) -> bool:
         """
         Add or modify a key in the key file.
 
@@ -805,32 +1026,233 @@ class FMCOS:
 
         Args:
             key_id: Key identifier
-            key_data: Key data including type, permissions, etc.
+            key_data: Key data including type, permissions, etc. (use build_key_data_*)
             add_key: True to add new key (P1=01), False to modify (P1=key type)
+            key_type: Key type for modification (required if add_key=False)
+            select: Whether to select card before command (False for continued session)
             keep_field: Whether to keep RF field on after command
 
         Returns:
             True if operation succeeded
         """
-        p1 = 0x01 if add_key else key_data[0]
+        if add_key:
+            p1 = 0x01
+        else:
+            if key_type is None:
+                # If modifying and type not specified, try to guess from data if present
+                # or require user to provide it. For now, default to 00/fail if missing?
+                # Actually spec says P1=KeyType.
+                if len(key_data) > 0 and key_data[0] in [0x39, 0x3A, 0x37, 0x36, 0x38]:
+                     # Some formats start with type
+                     p1 = key_data[0]
+                else:
+                     # For general keys (Case 1), type isn't in data. User MUST provide it.
+                     # But for safety, let's error or default carefully.
+                     # Let's assume user passes key_type for modification.
+                     raise ValueError("key_type required for modifying key")
+            else:
+                p1 = key_type
 
         _, sw1, sw2 = self.send_apdu(CLA_PBOC, INS_WRITE_KEY, p1, key_id,
-                                      data=key_data, keep_field=keep_field)
+                                      data=key_data, select=select, keep_field=keep_field)
         return self.check_sw(sw1, sw2)
 
     # -------------------------------------------------------------------------
     # File Management Commands
     # -------------------------------------------------------------------------
 
-    def create_file(self, file_id: int, file_info: bytes, *, keep_field: bool = True) -> bool:
+    @staticmethod
+    def build_file_info_df(size: int, create_perm: int, erase_perm: int,
+                           app_file_id: int = 0x00, df_name: bytes = b"") -> bytes:
+        """
+        Build file control info for creating a DF (Directory File).
+
+        FMCOS 7.13: DF structure (including MF)
+        - Type: 38
+        - Size: 2 bytes (file space)
+        - Create permission: 1 byte
+        - Erase permission: 1 byte
+        - App file ID: 1 byte (SFI returned on select, e.g., 0x95 for file 0015)
+        - Reserved: FF FF
+        - DF Name: 5-16 bytes
+
+        Args:
+            size: Directory file space in bytes (FFFF for MF)
+            create_perm: Create permission byte
+            erase_perm: Erase permission byte
+            app_file_id: Application file ID (short file ID | 0x80)
+            df_name: DF name (5-16 bytes, or 8x FF for default)
+
+        Returns:
+            File control info bytes
+        """
+        info = bytes([FILE_TYPE_DF])
+        info += size.to_bytes(2, 'big')
+        info += bytes([create_perm, erase_perm, app_file_id])
+        info += bytes([0xFF, 0xFF])  # Reserved
+
+        if df_name:
+            if len(df_name) < 5:
+                df_name = df_name + bytes(5 - len(df_name))
+            elif len(df_name) > 16:
+                df_name = df_name[:16]
+            info += df_name
+        else:
+            info += bytes([0xFF] * 8)  # Default: 8x FF
+
+        return info
+
+    @staticmethod
+    def build_file_info_binary(size: int, read_perm: int, write_perm: int,
+                               key_settings: int = 0xF8,
+                               mac_write: bool = False, encrypted: bool = False) -> bytes:
+        """
+        Build file control info for creating a Binary EF.
+
+        FMCOS 7.13: Binary EF structure
+        - Type: 28 (A8 for MAC write, 68 for encrypted)
+        - Size: 2 bytes
+        - Read permission: 1 byte
+        - Write permission: 1 byte
+        - Reserved: FF
+        - Key settings: 1 byte (b7-b5=111, b4-b3=read key, b2-b1=write key)
+
+        Args:
+            size: File size in bytes
+            read_perm: Read permission byte
+            write_perm: Write permission byte
+            key_settings: Key ID settings byte (default 0xF8)
+            mac_write: If True, set MAC write mode (type A8)
+            encrypted: If True, set encrypted write mode (type 68)
+
+        Returns:
+            File control info bytes
+        """
+        file_type = FILE_TYPE_BINARY
+        if mac_write:
+            file_type |= FILE_MOD_MAC_WRITE
+        elif encrypted:
+            file_type |= FILE_MOD_ENCRYPTED
+
+        info = bytes([file_type])
+        info += size.to_bytes(2, 'big')
+        info += bytes([read_perm, write_perm, 0xFF, key_settings])
+
+        return info
+
+    @staticmethod
+    def build_file_info_record(record_type: int, num_records: int, record_length: int,
+                               read_perm: int, write_perm: int,
+                               key_settings: int = 0xF8,
+                               mac_write: bool = False, encrypted: bool = False) -> bytes:
+        """
+        Build file control info for creating a Record EF.
+
+        FMCOS 7.13: Record EF structure (fixed 2A, variable 2C, cyclic 2E)
+        - Type: 2A/2C/2E (or | 0x80 for MAC, | 0x40 for encrypted)
+        - Size: byte1=num_records, byte2=record_length
+        - Read permission: 1 byte
+        - Write permission: 1 byte
+        - Reserved: FF
+        - Key settings: 1 byte
+
+        Physical space = num_records * (record_length + 1) + 8
+
+        Args:
+            record_type: FILE_TYPE_FIXED_RECORD, FILE_TYPE_VARIABLE_RECORD, or FILE_TYPE_CYCLIC
+            num_records: Number of records (must be >= 2)
+            record_length: Length of each record
+            read_perm: Read permission byte
+            write_perm: Write permission byte
+            key_settings: Key ID settings byte (default 0xF8)
+            mac_write: If True, set MAC write mode
+            encrypted: If True, set encrypted write mode
+
+        Returns:
+            File control info bytes
+        """
+        file_type = record_type
+        if mac_write:
+            file_type |= FILE_MOD_MAC_WRITE
+        elif encrypted:
+            file_type |= FILE_MOD_ENCRYPTED
+
+        info = bytes([file_type])
+        info += bytes([num_records, record_length])  # Size field for records
+        info += bytes([read_perm, write_perm, 0xFF, key_settings])
+
+        return info
+
+    @staticmethod
+    def build_file_info_key(num_keys: int, df_sfi: int, add_perm: int) -> bytes:
+        """
+        Build file control info for creating a Key File.
+
+        FMCOS 7.13: Key File structure
+        - Type: 3F
+        - Size: 2 bytes (key count)
+        - DF SFI: 1 byte (b7-5: 000=DDF, 100=ADF short file ID)
+        - Add permission: 1 byte
+        - Reserved: FF FF
+
+        Args:
+            num_keys: Number of keys to allocate
+            df_sfi: DF short file identifier (0x00 for DDF, 0x80|SFI for ADF)
+            add_perm: Add key permission byte
+
+        Returns:
+            File control info bytes
+        """
+        info = bytes([FILE_TYPE_KEY])
+        info += num_keys.to_bytes(2, 'big')
+        info += bytes([df_sfi, add_perm, 0xFF, 0xFF])
+
+        return info
+
+    @staticmethod
+    def build_file_info_pboc(usage_perm: int, tran_sfi: int) -> bytes:
+        """
+        Build file control info for creating a PBOC ED/EP file.
+
+        FMCOS 7.13: PBOC ED/EP structure
+        - Type: 2F
+        - Size: 02 08 (fixed)
+        - Usage permission: 1 byte
+        - Reserved: 00
+        - Reserved: FF
+        - Transaction record SFI: 1 byte
+
+        Args:
+            usage_perm: Usage permission byte
+            tran_sfi: Short file identifier for transaction records
+
+        Returns:
+            File control info bytes
+        """
+        info = bytes([FILE_TYPE_PBOC_EDEP])
+        info += bytes([0x02, 0x08])  # Fixed size for ED/EP
+        info += bytes([usage_perm, 0x00, 0xFF, tran_sfi])
+
+        return info
+
+    def create_file(self, file_id: int, file_info: bytes, *,
+                    select: bool = True, keep_field: bool = True) -> bool:
         """
         Create a new file (MF/DF/EF).
 
         CREATE FILE command (80 E0 <ID_H> <ID_L> <Lc> <FileInfo>)
 
+        Use build_file_info_* methods to construct file_info:
+        - build_file_info_df(): For DF/MF
+        - build_file_info_binary(): For binary EF
+        - build_file_info_record(): For record EF (fixed/variable/cyclic)
+        - build_file_info_key(): For key file
+        - build_file_info_pboc(): For PBOC ED/EP
+
         Args:
             file_id: 2-byte file identifier
-            file_info: File control information (type, size, permissions, etc.)
+            file_info: File control information (use build_file_info_* methods)
+            select: Whether to select card before command (False for continued session)
             keep_field: Whether to keep RF field on after command
 
         Returns:
@@ -840,10 +1262,10 @@ class FMCOS:
         p2 = file_id & 0xFF
 
         _, sw1, sw2 = self.send_apdu(CLA_PBOC, INS_CREATE_FILE, p1, p2,
-                                      data=file_info, keep_field=keep_field)
+                                      data=file_info, select=select, keep_field=keep_field)
         return self.check_sw(sw1, sw2)
 
-    def erase_df(self, *, keep_field: bool = True) -> bool:
+    def erase_df(self, *, select: bool = True, keep_field: bool = True) -> bool:
         """
         Erase all files under current DF.
 
@@ -852,13 +1274,14 @@ class FMCOS:
         WARNING: This is destructive! Use with caution.
 
         Args:
+            select: Whether to select card before command (False for continued session)
             keep_field: Whether to keep RF field on after command
 
         Returns:
             True if erase succeeded
         """
         _, sw1, sw2 = self.send_apdu(CLA_PBOC, INS_ERASE_DF, 0x00, 0x00,
-                                      data=b"", keep_field=keep_field)
+                                      data=b"", select=select, keep_field=keep_field)
         return self.check_sw(sw1, sw2)
 
     # -------------------------------------------------------------------------
