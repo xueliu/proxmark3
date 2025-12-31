@@ -1,0 +1,1 @@
+create_clock -name jtag_tck -period 5000000.0 [get_ports {jtag_tck}]

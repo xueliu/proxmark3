@@ -1,0 +1,15 @@
+-d /home/lx/spielplatz/litex/sipeed_tang_nano_20k/build/sipeed_tang_nano_20k/gateware/impl/gwsynthesis/project.vg
+-p GW2AR-18C-QFN88-8
+-pn GW2AR-LV18QN88C8/I7
+-cst /home/lx/spielplatz/litex/sipeed_tang_nano_20k/build/sipeed_tang_nano_20k/gateware/sipeed_tang_nano_20k.cst
+-cfg /home/lx/spielplatz/litex/sipeed_tang_nano_20k/build/sipeed_tang_nano_20k/gateware/impl/pnr/device.cfg
+-sdc /home/lx/spielplatz/litex/sipeed_tang_nano_20k/build/sipeed_tang_nano_20k/gateware/sipeed_tang_nano_20k.sdc
+-bit
+-tr
+-ph
+-timing
+-cst_error
+-convert_sdp32_36_to_sdp16_18
+-correct_hold 1
+-route_maxfan 23
+-global_freq 100.000

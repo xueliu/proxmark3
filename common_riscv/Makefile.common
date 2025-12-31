@@ -21,6 +21,10 @@
 
 all:
 
+# Include LiteX generated variables
+include ../common_riscv/sipeed_tang_nano_20k/software/include/generated/variables.mak
+
+
 # This Makefile might have been called from various subdirs, trying to find our Makefile.defs
 ifeq ($(DEFSBEENHERE),)
     -include Makefile.defs
@@ -41,6 +45,7 @@ PICOLIBC_DIRECTORY=../common_riscv/sipeed_tang_nano_20k/software/picolibc_src
 #BUILDINC_DIRECTORY
 #CPU_DIRECTORY
 
+CROSS ?= riscv64-unknown-elf-
 CROSS_CC = $(CROSS)gcc
 CROSS_LD = $(CROSS)gcc
 CROSS_OBJCOPY = $(CROSS)objcopy
@@ -52,6 +57,23 @@ INCLUDE = -I../include -I../common_riscv -I../common_fpga -I../common -I. \
 			-isystem ../common_riscv/sipeed_tang_nano_20k/software/libc \
 			-isystem $(PICOLIBC_DIRECTORY)/newlib/libc/tinystdio \
 			-isystem $(PICOLIBC_DIRECTORY)/newlib/libc/include \
+
+LITEX_SW = ../common_riscv/sipeed_tang_nano_20k/software
+INCLUDE += -I$(BUILDINC_DIRECTORY) \
+			-I$(LITEX_SW)/include \
+			-I$(LITEX_SW)/libbase \
+			-I$(LITEX_SW)/libc \
+			-I$(LITEX_SW)/libcompiler_rt \
+			-I$(LITEX_SW)/libfatfs \
+			-I$(LITEX_SW)/liblitedram \
+			-I$(LITEX_SW)/libliteeth \
+			-I$(LITEX_SW)/liblitesata \
+			-I$(LITEX_SW)/liblitesdcard \
+			-I$(LITEX_SW)/liblitespi
+
+CROSS_LDFLAGS += -L../common_riscv
+
+
 
 
 # Also search prerequisites in the common directory (for usb.c), the fpga directory (for fpga.bit), and the lz4 directory
@@ -134,9 +156,10 @@ DEPFLAGS = -MT $@ -MMD -MP -MF $(OBJDIR)/$*.Td
 # make temporary to final dependency files after successful compilation
 POSTCOMPILE = $(MV) -f $(OBJDIR)/$*.Td $(OBJDIR)/$*.d
 
-THUMBOBJ = $(patsubst %.c,$(OBJDIR)/%.o,$(notdir $(THUMBSRC)))
-ARMOBJ   = $(patsubst %.c,$(OBJDIR)/%.o,$(notdir $(ARMSRC)))
-ASMOBJ   = $(patsubst %.s,$(OBJDIR)/%.o,$(notdir $(ASMSRC)))
+ASMOBJ_s = $(patsubst %.s,$(OBJDIR)/%.o,$(notdir $(filter %.s,$(ASMSRC))))
+ASMOBJ_S = $(patsubst %.S,$(OBJDIR)/%.o,$(notdir $(filter %.S,$(ASMSRC))))
+ASMOBJ   = $(ASMOBJ_s) $(ASMOBJ_S)
+
 VERSIONOBJ = $(patsubst %.c,$(OBJDIR)/%.o,$(notdir $(VERSIONSRC)))
 
 $(THUMBOBJ): $(OBJDIR)/%.o: %.c $(INCLUDES)
@@ -151,7 +174,11 @@ $(ARMOBJ): $(OBJDIR)/%.o: %.c $(INCLUDES)
 	$(Q)$(CROSS_CC) $(CROSS_CFLAGS) $(DEPFLAGS) -o $@ $<
 	$(Q)$(POSTCOMPILE)
 
-$(ASMOBJ): $(OBJDIR)/%.o: %.s
+$(ASMOBJ_s): $(OBJDIR)/%.o: %.s
+	$(info [-] CC $<)
+	$(Q)$(CROSS_CC) $(CROSS_CFLAGS) -o $@ $<
+
+$(ASMOBJ_S): $(OBJDIR)/%.o: %.S
 	$(info [-] CC $<)
 	$(Q)$(CROSS_CC) $(CROSS_CFLAGS) -o $@ $<
 
