@@ -167,6 +167,9 @@ ARMSRC = fpgaloader.c \
 VERSIONSRC = version_pm3.c \
     fpga_version_info.c
 
+
+ASMSRC = ../common_riscv/crt0.S
+
 # TODO:
 # Do not move this inclusion before the definition of {THUMB,ASM,ARM}SRC
 #include ../common_arm/Makefile.common
@@ -179,12 +182,16 @@ else
     INSTALLFWTAG = $(notdir $(INSTALLFW))
 endif
 
-OBJS = $(OBJDIR)/fullimage.s19
+OBJS = $(OBJDIR)/fullimage.s19 $(OBJDIR)/fullimage.bin
 FPGA_COMPRESSOR = ../tools/fpga_compress/fpga_compress
 
 all: showinfo $(OBJS)
 
 showinfo:
+	$(info THUMBSRC=$(THUMBSRC))
+	$(info ARMSRC=$(ARMSRC))
+	$(info THUMBOBJ=$(THUMBOBJ))
+	$(info ARMOBJ=$(ARMOBJ))
 	$(info compiler version:  $(shell $(CROSS_CC) --version|head -n 1))
 
 .DELETE_ON_ERROR:
@@ -216,9 +223,23 @@ $(FPGA_COMPRESSOR):
 	$(error [!] MISSING $@ => To build it, go the root of the repo and do "make $(notdir $@)")
 	$(error [!] MISSING $@)
 
-$(OBJDIR)/fullimage.stage1.elf: $(VERSIONOBJ) $(OBJDIR)/fpga_all.o $(THUMBOBJ) $(ARMOBJ)
+# Redefine objects locally to verify expansion
+THUMBOBJ := $(patsubst %.c,$(OBJDIR)/%.o,$(notdir $(THUMBSRC)))
+ARMOBJ   := $(patsubst %.c,$(OBJDIR)/%.o,$(notdir $(ARMSRC)))
+
+$(THUMBOBJ): $(OBJDIR)/%.o: %.c $(INCLUDES)
+	$(info [-] CC $<)
+	$(Q)$(CROSS_CC) $(CROSS_CFLAGS) $(DEPFLAGS) -o $@ $<
+
+$(ARMOBJ): $(OBJDIR)/%.o: %.c $(INCLUDES)
+	$(info [-] CC $<)
+	$(Q)$(CROSS_CC) $(CROSS_CFLAGS) $(DEPFLAGS) -o $@ $<
+
+$(OBJDIR)/fullimage.stage1.elf: $(VERSIONOBJ) $(OBJDIR)/fpga_all.o $(THUMBOBJ) $(ARMOBJ) $(ASMOBJ)
+
 	$(info [=] LD $@)
-	$(Q)$(CROSS_LD) $(CROSS_LDFLAGS) -Wl,-T,ldscript,-Map,$(patsubst %.elf,%.map,$@) -o $@ $^ $(LIBS)
+	$(Q)$(CROSS_LD) $(CROSS_LDFLAGS) -Wl,-T,../common_riscv/linker.ld,-Map,$(patsubst %.elf,%.map,$@) -o $@ $^ $(LIBS)
+
 
 $(OBJDIR)/fullimage.data.bin: $(OBJDIR)/fullimage.stage1.elf
 	$(info [-] GEN $@)
@@ -241,6 +262,10 @@ ifneq (,$(findstring WITH_COMPRESSION,$(APP_CFLAGS)))
 else
 	$(Q)$(CP) $(OBJDIR)/fullimage.stage1.elf $@
 endif
+
+$(OBJDIR)/fullimage.bin: $(OBJDIR)/fullimage.elf
+	$(info [-] GEN $@)
+	$(Q)$(CROSS_OBJCOPY) -O binary -I elf32-littleriscv $^ $@
 
 tarbin: $(OBJS)
 	$(info TAR $@)
@@ -272,4 +297,8 @@ help:
 	@echo Possible targets:
 	@echo +	all    - Build the full image $(OBJDIR)/fullimage.s19
 	@echo +	clean             - Clean $(OBJDIR)
+
+$(OBJDIR)/crt0.o: ../common_riscv/crt0.S
+	$(info [-] CC $<)
+	$(Q)$(CROSS_CC) $(CROSS_CFLAGS) -o $@ $<
 
