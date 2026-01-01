@@ -949,79 +949,145 @@ def cmd_test(fmcos: FMCOS, args: argparse.Namespace) -> int:
 
 def cmd_explore(fmcos: FMCOS, args: argparse.Namespace) -> int:
     """
-    Explore FMCOS file system structure.
+    Explore file system (EF/DF scanner).
 
-    Scans common file ID ranges to find existing files.
+    Modes:
+    - EF: Scans for Elementary Files (default range 0000-0020)
+    - DF: Scans for Dedicated Files (default range DF01-DF10)
 
     Args:
         fmcos: FMCOS interface instance.
-        args: Command line arguments containing target DF.
+        args: Command line arguments containing mode, start, end.
 
     Returns:
         0 on success, 1 on failure.
     """
-    log(f"{SCRIPT_NAME} v{__version__} - File System Explorer")
-    log()
+    mode = getattr(args, 'mode', 'ef').lower()
+    start_arg = getattr(args, 'start', None)
+    end_arg = getattr(args, 'end', None)
 
+    # Determine range based on mode and args
+    if mode == 'df':
+        start_fid = int(start_arg, 16) if start_arg else 0xDF01
+        end_fid = int(end_arg, 16) if end_arg else 0xDF10
+        range_desc = f"DF Range {start_fid:04X}-{end_fid:04X}"
+    else:  # ef default
+        start_fid = int(start_arg, 16) if start_arg else 0x0000
+        end_fid = int(end_arg, 16) if end_arg else 0x0020
+        range_desc = f"EF Range {start_fid:04X}-{end_fid:04X}"
+
+    log(f"Exploring {range_desc}...")
+
+    # Establish initial context (Select Card + Select Base DF)
+    base_df = 0x3F00
     if args.file != "3F00":
-        file_id = int(args.file, 16)
-        log(f"Selecting DF: {file_id:04X}")
-        _, success = fmcos.select_file(file_id)
-        if not success:
-            sw1, sw2 = fmcos.last_sw
-            log_error(f"Failed to select DF: {fmcos.get_sw_description(sw1, sw2)}")
-            return 1
+        base_df = int(args.file, 16)
+        log(f"Selecting Base DF: {base_df:04X}")
+        _, success = fmcos.select_file(base_df, select=True, keep_field=True)
     else:
-        log("Exploring MF (3F00)")
-        fmcos.select_mf()
+        log("Selecting MF (3F00)")
+        _, success = fmcos.select_mf(select=True, keep_field=True) # select=True ensures card wake-up
 
-    log()
-    log("Scanning for files...")
-    log()
+    if not success:
+        log_error("Failed to select base DF/MF")
+        return 1
 
-    found_files = []
+    log("-" * 60)
+    log(f"{'FID':<6} {'Type':<18} {'Size':<6} {'Name/Info':<30}")
+    log("-" * 60)
 
-    scan_ranges = [
-        (0x0001, 0x0020, "EF range 0001-0020"),
-        (0xDF01, 0xDF10, "DF range DF01-DF10"),
-    ]
+    found_count = 0
 
-    for start, end, desc in scan_ranges:
-        log(f"Scanning {desc}...")
-        for fid in range(start, end + 1):
-            if args.file != "3F00":
-                fmcos.select_file(int(args.file, 16))
-            else:
-                fmcos.select_mf()
+    for fid in range(start_fid, end_fid + 1):
+        # Scan by selecting file
+        # CRITICAL: Use select=False to maintain session (no WUPA/RATS)
+        # keep_field=True keeps RF on
+        fci, success = fmcos.select_file(fid, select=False, keep_field=True)
 
-            fci, success = fmcos.select_file(fid)
-            if success:
-                file_type = "Unknown"
-                data, bin_ok = fmcos.read_binary(0, 1)
-                if bin_ok:
-                    file_type = "Binary EF"
-                else:
-                    data, rec_ok = fmcos.read_record(1)
-                    if rec_ok:
-                        file_type = "Record EF"
-                    else:
-                        file_type = "DF or Restricted"
+        if success:
+            found_count += 1
+            fci_hex = fci.hex().upper()
+            
+            # Parse FCI to get details
+            parsed = fmcos.parse_fci(fci)
+            
+            # Key determination
+            f_type = "Unknown"
+            size_str = "-"
+            info_str = ""
+            
+            # Identify file type
+            is_df = False
+            # 1. Check tags
+            if '84' in fci_hex or (parsed and parsed.get('df_name')): # DF Name present
+                 f_type = "DF"
+                 is_df = True
+                 name = parsed.get('df_name', '')
+                 info_str = f"Name: {name}"
+            
+            # 2. Check first byte of FCI (Proprietary/FMCOS specific)
+            if f_type == "Unknown" and len(fci) > 0:
+                type_byte = fci[0]
+                if type_byte == 0x38:
+                    f_type = "DF"
+                    is_df = True
+                elif type_byte == 0x28:
+                    f_type = "Binary EF"
+                elif type_byte in (0x2A, 0x2C, 0x2E):
+                    f_type = "Record EF"
+                elif type_byte == 0x3F:
+                     f_type = "Key File"
 
-                found_files.append((fid, file_type, fci))
-                log_success(f"  Found: {fid:04X} - {file_type}")
+            # 3. Probe for EF content if unknown
+            # Note: If it's a DF, Read Binary usually fails with 69 86 (No Current EF)
+            if f_type == "Unknown":
+                 # Try Read Binary (select=False)
+                 d, ok = fmcos.read_binary(0, 1, select=False, keep_field=True)
+                 if ok:
+                     f_type = "Binary EF (Est)"
+                 else:
+                     sw1, sw2 = fmcos.last_sw
+                     # Check for "Condition not satisfied" or "No current EF"
+                     # 6986 = Command not allowed (no current EF) -> Likely DF or MF
+                     if (sw1, sw2) == (0x69, 0x86):
+                         f_type = "DF (Likely)"
+                         is_df = True
+                     else:
+                         # Try Read Record
+                         d, ok = fmcos.read_record(1, select=False, keep_field=True)
+                         if ok:
+                             f_type = "Record EF (Est)"
+                         elif fmcos.last_sw == (0x69, 0x86):
+                             f_type = "DF (Likely)"
+                             is_df = True
 
-    log()
-    if found_files:
-        log_success(f"Found {len(found_files)} file(s)")
-        log()
-        log("File Summary:")
-        log("-" * 40)
-        for fid, ftype, fci in found_files:
-            log(f"  {fid:04X}: {ftype}")
-            if fci:
-                log(f"         FCI: {fci.hex().upper()[:32]}...")
+            # Extract size
+            if parsed and parsed.get('file_size'):
+                 size_str = str(parsed['file_size'])
+            elif len(fci) >= 3 and fci[0] in [0x28, 0x2A, 0x2C, 0x2E, 0x3F]:
+                 size_val = int.from_bytes(fci[1:3], 'big')
+                 size_str = str(size_val)
+            
+            log(f"{fid:04X}   {f_type:<18} {size_str:<6} {info_str:<30}")
+            
+            # Robust Navigation: Return to Base context if we might have changed it
+            # Scan operations (Select) inside a DF changes context to that DF.
+            # We MUST reset to base_df to continue scanning the original directory.
+            # This mimics the "Select 3F00" seen in trace.
+            if is_df or f_type == "Unknown": 
+                 # Conservatively reset context if it was a DF or we aren't sure
+                 # Actually, standard ISO: Selecting an EF doesn't change DF. Selecting DF does.
+                 # So only if is_df is true. But "Likely DF" covers 6986.
+                 # Let's always reset context if successful select to be safe like trace?
+                 # Trace resets periodically.
+                 # Safe approach: Reset context always after a successful find.
+                 fmcos.select_file(base_df, select=False, keep_field=True)
+
+    log("-" * 60)
+    if found_count == 0:
+        log("No files found.")
     else:
-        log("No files found in scanned ranges")
+        log(f"Total: {found_count} files found.")
 
     return 0
 
@@ -1087,6 +1153,13 @@ Examples:
                         help="Don't re-select card (use with --keep to maintain auth session)")
     parser.add_argument("--modify", action="store_true", help="Modify existing key (default: Add key)")
     parser.add_argument("--key-type", default=None, help="Key type for modification (hex)")
+    
+    # Explore arguments
+    parser.add_argument("--mode", choices=["ef", "df"], default="ef",
+                        help="Explore mode: ef (default) or df")
+    parser.add_argument("--start", "-S", help="Start File ID (hex)")
+    parser.add_argument("--end", "-E", help="End File ID (hex)")
+    
     parser.add_argument("--debug", action="store_true", help="Enable debug output")
 
     return parser.parse_args(argv)

@@ -652,7 +652,7 @@ class FMCOS:
     # File Selection Commands
     # -------------------------------------------------------------------------
 
-    def select_file(self, file_id: int, *, keep_field: bool = True) -> tuple[bytes, bool]:
+    def select_file(self, file_id: int, *, select: bool = True, keep_field: bool = True) -> tuple[bytes, bool]:
         """
         Select a file by its 2-byte file identifier.
 
@@ -660,6 +660,7 @@ class FMCOS:
 
         Args:
             file_id: 2-byte file identifier (e.g., 0x3F00 for MF)
+            select: Whether to select card before command
             keep_field: Whether to keep RF field on after command
 
         Returns:
@@ -667,10 +668,10 @@ class FMCOS:
         """
         fid_bytes = bytes([(file_id >> 8) & 0xFF, file_id & 0xFF])
         data, sw1, sw2 = self.send_apdu(CLA_ISO, INS_SELECT, 0x00, 0x00,
-                                         data=fid_bytes, le=0x00, keep_field=keep_field)
+                                         data=fid_bytes, le=0x00, select=select, keep_field=keep_field)
         return data, self.check_sw(sw1, sw2)
 
-    def select_df(self, df_name: bytes | str, *, keep_field: bool = True) -> tuple[bytes, bool]:
+    def select_df(self, df_name: bytes | str, *, select: bool = True, keep_field: bool = True) -> tuple[bytes, bool]:
         """
         Select a DF by its name (AID).
 
@@ -678,36 +679,40 @@ class FMCOS:
 
         Args:
             df_name: DF name as bytes or hex string
+            select: Whether to select card before command
             keep_field: Whether to keep RF field on after command
 
         Returns:
             Tuple of (FCI data, success status)
         """
         if isinstance(df_name, str):
-            df_name = bytes.fromhex(df_name.replace(" ", ""))
+            df_bytes = bytes.fromhex(df_name.replace(" ", ""))
+        else:
+            df_bytes = df_name
 
         data, sw1, sw2 = self.send_apdu(CLA_ISO, INS_SELECT, 0x04, 0x00,
-                                         data=df_name, le=0x00, keep_field=keep_field)
+                                         data=df_bytes, le=0x00, select=select, keep_field=keep_field)
         return data, self.check_sw(sw1, sw2)
 
-    def select_mf(self, *, keep_field: bool = True) -> tuple[bytes, bool]:
+    def select_mf(self, *, select: bool = True, keep_field: bool = True) -> tuple[bytes, bool]:
         """
         Select the Master File (MF).
 
         Args:
+            select: Whether to select card before command
             keep_field: Whether to keep RF field on after command
 
         Returns:
             Tuple of (FCI data, success status)
         """
-        return self.select_file(0x3F00, keep_field=keep_field)
+        return self.select_file(0x3F00, select=select, keep_field=keep_field)
 
     # -------------------------------------------------------------------------
     # Binary File Commands
     # -------------------------------------------------------------------------
 
     def read_binary(self, offset: int = 0, length: int = 0,
-                    sfi: int | None = None, *, keep_field: bool = True) -> tuple[bytes, bool]:
+                    sfi: int | None = None, *, select: bool = True, keep_field: bool = True) -> tuple[bytes, bool]:
         """
         Read data from a transparent (binary) EF.
 
@@ -717,6 +722,7 @@ class FMCOS:
             offset: Byte offset within file
             length: Number of bytes to read (0 = max available)
             sfi: Short file identifier (optional, uses current file if None)
+            select: Whether to select card before command
             keep_field: Whether to keep RF field on after command
 
         Returns:
@@ -732,7 +738,7 @@ class FMCOS:
             p2 = offset & 0xFF
 
         data, sw1, sw2 = self.send_apdu(CLA_ISO, INS_READ_BINARY, p1, p2,
-                                         le=length, keep_field=keep_field)
+                                         le=length, select=select, keep_field=keep_field)
         return data, self.check_sw(sw1, sw2)
 
     def update_binary(self, offset: int, data: bytes,
@@ -767,7 +773,7 @@ class FMCOS:
     # -------------------------------------------------------------------------
 
     def read_record(self, record_num: int, sfi: int | None = None,
-                    length: int = 0, *, keep_field: bool = True) -> tuple[bytes, bool]:
+                    length: int = 0, *, select: bool = True, keep_field: bool = True) -> tuple[bytes, bool]:
         """
         Read a record from a record-oriented EF.
 
@@ -777,6 +783,7 @@ class FMCOS:
             record_num: Record number (1-indexed)
             sfi: Short file identifier (optional, uses current file if None)
             length: Expected record length (0 = max)
+            select: Whether to select card before command
             keep_field: Whether to keep RF field on after command
 
         Returns:
@@ -792,7 +799,7 @@ class FMCOS:
             p2 = 0x04
 
         data, sw1, sw2 = self.send_apdu(CLA_ISO, INS_READ_RECORD, p1, p2,
-                                         le=length, keep_field=keep_field)
+                                         le=length, select=select, keep_field=keep_field)
         return data, self.check_sw(sw1, sw2)
 
     def update_record(self, record_num: int, data: bytes,
