@@ -330,7 +330,7 @@ class FMCOS:
         p2: int,
         data: bytes | None = None,
         le: int | None = None,
-        select: bool = True,
+        select: bool = False,
         keep_field: bool = True,
     ) -> tuple[bytes, int, int]:
         """
@@ -346,7 +346,7 @@ class FMCOS:
             p2: Parameter 2
             data: Command data (optional)
             le: Expected response length (optional, 0x00 = max)
-            select: Whether to select card first (default: True)
+            select: Whether to select card first (default: False for session continuity)
             keep_field: Whether to keep RF field on after command (default: True)
                         Set to False for the last command to trigger DropField()
 
@@ -652,7 +652,7 @@ class FMCOS:
     # File Selection Commands
     # -------------------------------------------------------------------------
 
-    def select_file(self, file_id: int, *, select: bool = True, keep_field: bool = True) -> tuple[bytes, bool]:
+    def select_file(self, file_id: int, *, select: bool = False, keep_field: bool = True) -> tuple[bytes, bool]:
         """
         Select a file by its 2-byte file identifier.
 
@@ -660,7 +660,7 @@ class FMCOS:
 
         Args:
             file_id: 2-byte file identifier (e.g., 0x3F00 for MF)
-            select: Whether to select card before command
+            select: Whether to select card before command (default: False)
             keep_field: Whether to keep RF field on after command
 
         Returns:
@@ -671,7 +671,7 @@ class FMCOS:
                                          data=fid_bytes, le=0x00, select=select, keep_field=keep_field)
         return data, self.check_sw(sw1, sw2)
 
-    def select_df(self, df_name: bytes | str, *, select: bool = True, keep_field: bool = True) -> tuple[bytes, bool]:
+    def select_df(self, df_name: bytes | str, *, select: bool = False, keep_field: bool = True) -> tuple[bytes, bool]:
         """
         Select a DF by its name (AID).
 
@@ -679,7 +679,7 @@ class FMCOS:
 
         Args:
             df_name: DF name as bytes or hex string
-            select: Whether to select card before command
+            select: Whether to select card before command (default: False)
             keep_field: Whether to keep RF field on after command
 
         Returns:
@@ -694,12 +694,12 @@ class FMCOS:
                                          data=df_bytes, le=0x00, select=select, keep_field=keep_field)
         return data, self.check_sw(sw1, sw2)
 
-    def select_mf(self, *, select: bool = True, keep_field: bool = True) -> tuple[bytes, bool]:
+    def select_mf(self, *, select: bool = False, keep_field: bool = True) -> tuple[bytes, bool]:
         """
         Select the Master File (MF).
 
         Args:
-            select: Whether to select card before command
+            select: Whether to select card before command (default: False)
             keep_field: Whether to keep RF field on after command
 
         Returns:
@@ -712,7 +712,7 @@ class FMCOS:
     # -------------------------------------------------------------------------
 
     def read_binary(self, offset: int = 0, length: int = 0,
-                    sfi: int | None = None, *, select: bool = True, keep_field: bool = True) -> tuple[bytes, bool]:
+                    sfi: int | None = None, *, select: bool = False, keep_field: bool = True) -> tuple[bytes, bool]:
         """
         Read data from a transparent (binary) EF.
 
@@ -722,7 +722,7 @@ class FMCOS:
             offset: Byte offset within file
             length: Number of bytes to read (0 = max available)
             sfi: Short file identifier (optional, uses current file if None)
-            select: Whether to select card before command
+            select: Whether to select card before command (default: False)
             keep_field: Whether to keep RF field on after command
 
         Returns:
@@ -742,7 +742,7 @@ class FMCOS:
         return data, self.check_sw(sw1, sw2)
 
     def update_binary(self, offset: int, data: bytes,
-                      sfi: int | None = None, *, keep_field: bool = True) -> bool:
+                      sfi: int | None = None, *, select: bool = False, keep_field: bool = True) -> bool:
         """
         Write data to a transparent (binary) EF.
 
@@ -752,6 +752,7 @@ class FMCOS:
             offset: Byte offset within file
             data: Data to write
             sfi: Short file identifier (optional, uses current file if None)
+            select: Whether to select card before command (default: False)
             keep_field: Whether to keep RF field on after command
 
         Returns:
@@ -765,7 +766,7 @@ class FMCOS:
             p2 = offset & 0xFF
 
         _, sw1, sw2 = self.send_apdu(CLA_ISO, INS_UPDATE_BINARY, p1, p2,
-                                      data=data, keep_field=keep_field)
+                                      data=data, select=select, keep_field=keep_field)
         return self.check_sw(sw1, sw2)
 
     # -------------------------------------------------------------------------
@@ -773,7 +774,7 @@ class FMCOS:
     # -------------------------------------------------------------------------
 
     def read_record(self, record_num: int, sfi: int | None = None,
-                    length: int = 0, *, select: bool = True, keep_field: bool = True) -> tuple[bytes, bool]:
+                    length: int = 0, *, select: bool = False, keep_field: bool = True) -> tuple[bytes, bool]:
         """
         Read a record from a record-oriented EF.
 
@@ -783,7 +784,7 @@ class FMCOS:
             record_num: Record number (1-indexed)
             sfi: Short file identifier (optional, uses current file if None)
             length: Expected record length (0 = max)
-            select: Whether to select card before command
+            select: Whether to select card before command (default: False)
             keep_field: Whether to keep RF field on after command
 
         Returns:
@@ -803,7 +804,7 @@ class FMCOS:
         return data, self.check_sw(sw1, sw2)
 
     def update_record(self, record_num: int, data: bytes,
-                      sfi: int | None = None, *, keep_field: bool = True) -> bool:
+                      sfi: int | None = None, *, select: bool = False, keep_field: bool = True) -> bool:
         """
         Update a record in a record-oriented EF.
 
@@ -813,6 +814,7 @@ class FMCOS:
             record_num: Record number (1-indexed)
             data: New record data
             sfi: Short file identifier (optional)
+            select: Whether to select card before command (default: False)
             keep_field: Whether to keep RF field on after command
 
         Returns:
@@ -826,7 +828,7 @@ class FMCOS:
             p2 = 0x04
 
         _, sw1, sw2 = self.send_apdu(CLA_ISO, INS_UPDATE_RECORD, p1, p2,
-                                      data=data, keep_field=keep_field)
+                                      data=data, select=select, keep_field=keep_field)
         return self.check_sw(sw1, sw2)
 
     def append_record(self, data: bytes, sfi: int | None = None) -> bool:
@@ -855,7 +857,7 @@ class FMCOS:
     # Security Commands
     # -------------------------------------------------------------------------
 
-    def get_challenge(self, length: int = 8, *, keep_field: bool = True) -> tuple[bytes, bool]:
+    def get_challenge(self, length: int = 8, *, select: bool = False, keep_field: bool = True) -> tuple[bytes, bool]:
         """
         Request a random number from the card.
 
@@ -863,6 +865,7 @@ class FMCOS:
 
         Args:
             length: Requested random number length (4 or 8)
+            select: Whether to select card before command (default: False)
             keep_field: Whether to keep RF field on after command
 
         Returns:
@@ -872,11 +875,11 @@ class FMCOS:
             length = 8
 
         data, sw1, sw2 = self.send_apdu(CLA_ISO, INS_GET_CHALLENGE, 0x00, 0x00,
-                                         le=length, keep_field=keep_field)
+                                         le=length, select=select, keep_field=keep_field)
         return data, self.check_sw(sw1, sw2)
 
     def external_auth(self, key_id: int, cryptogram: bytes,
-                      select: bool = True, *, keep_field: bool = True) -> bool:
+                      *, select: bool = False, keep_field: bool = True) -> bool:
         """
         Perform external authentication.
 
@@ -888,7 +891,7 @@ class FMCOS:
         Args:
             key_id: Key identifier for external auth key (type 39)
             cryptogram: 8-byte encrypted random number
-            select: Whether to select card first (default: True)
+            select: Whether to select card before command (default: False)
             keep_field: Whether to keep RF field on after command
 
         Returns:
@@ -903,7 +906,7 @@ class FMCOS:
         return self.check_sw(sw1, sw2)
 
     def internal_auth(self, key_id: int, data: bytes,
-                      operation: int = 0x00, *, keep_field: bool = True) -> tuple[bytes, bool]:
+                      operation: int = 0x00, *, select: bool = False, keep_field: bool = True) -> tuple[bytes, bool]:
         """
         Perform internal authentication / DES operation.
 
@@ -913,16 +916,17 @@ class FMCOS:
             key_id: DES key identifier
             data: Data for DES operation
             operation: 0x00=encrypt, 0x01=decrypt, 0x02=MAC
+            select: Whether to select card before command (default: False)
             keep_field: Whether to keep RF field on after command
 
         Returns:
             Tuple of (result data, success status)
         """
         resp, sw1, sw2 = self.send_apdu(CLA_ISO, INS_INTERNAL_AUTH, operation,
-                                         key_id, data=data, keep_field=keep_field)
+                                         key_id, data=data, select=select, keep_field=keep_field)
         return resp, self.check_sw(sw1, sw2)
 
-    def verify_pin(self, key_id: int, pin: bytes | str, *, keep_field: bool = True) -> tuple[int, bool]:
+    def verify_pin(self, key_id: int, pin: bytes | str, *, select: bool = False, keep_field: bool = True) -> tuple[int, bool]:
         """
         Verify a PIN/password.
 
@@ -931,6 +935,7 @@ class FMCOS:
         Args:
             key_id: PIN key identifier (type 3A)
             pin: PIN value as bytes or ASCII string
+            select: Whether to select card before command (default: False)
             keep_field: Whether to keep RF field on after command
 
         Returns:
@@ -940,7 +945,7 @@ class FMCOS:
             pin = pin.encode("ascii")
 
         _, sw1, sw2 = self.send_apdu(CLA_ISO, INS_VERIFY, 0x00, key_id,
-                                      data=pin, keep_field=keep_field)
+                                      data=pin, select=select, keep_field=keep_field)
 
         if self.check_sw(sw1, sw2):
             return -1, True
@@ -1295,7 +1300,7 @@ class FMCOS:
     # Electronic Purse/Passbook Commands
     # -------------------------------------------------------------------------
 
-    def get_balance(self, app_type: int = 0x02, *, keep_field: bool = True) -> tuple[int, bool]:
+    def get_balance(self, app_type: int = 0x02, *, select: bool = False, keep_field: bool = True) -> tuple[int, bool]:
         """
         Read electronic purse or passbook balance.
 
@@ -1303,13 +1308,14 @@ class FMCOS:
 
         Args:
             app_type: 0x01 for e-passbook, 0x02 for e-purse
+            select: Whether to select card before command (default: False)
             keep_field: Whether to keep RF field on after command
 
         Returns:
             Tuple of (balance in cents, success status)
         """
         data, sw1, sw2 = self.send_apdu(CLA_PBOC, INS_GET_BALANCE, 0x00,
-                                         app_type, le=0x04, keep_field=keep_field)
+                                         app_type, le=0x04, select=select, keep_field=keep_field)
 
         if self.check_sw(sw1, sw2) and len(data) >= 4:
             # Balance is 4 bytes big-endian
@@ -1800,13 +1806,14 @@ class FMCOS:
     # Utility Methods
     # -------------------------------------------------------------------------
 
-    def get_card_info(self, *, keep_field: bool = True) -> dict:
+    def get_card_info(self, *, select: bool = False, keep_field: bool = True) -> dict:
         """
         Read and parse card information.
 
         Selects MF and returns parsed FCI data.
 
         Args:
+            select: Whether to select card before command (default: False)
             keep_field: Whether to keep RF field on after command
 
         Returns:
