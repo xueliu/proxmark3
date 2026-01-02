@@ -58,7 +58,7 @@ def cmd_info(fmcos: FMCOS, _args: argparse.Namespace) -> int:
     log(f"{SCRIPT_NAME} v{__version__} - Card Information")
     log()
 
-    info = fmcos.get_card_info(keep_field=False)
+    info = fmcos.get_card_info(select=True, keep_field=False)
 
     log(f"Card Type: {color(info.get('type', 'Unknown'), fg='cyan')}")
     uid = info.get('uid', '')
@@ -109,7 +109,7 @@ def cmd_select(fmcos: FMCOS, args: argparse.Namespace) -> int:
     if use_name:
         # Select by DF name (P1=04)
         log(f"Selecting by DF name: {selector}")
-        fci, success = fmcos.select_df(selector, keep_field=False)
+        fci, success = fmcos.select_df(selector, select=True, keep_field=False)
     else:
         # Select by file identifier (P1=00)
         try:
@@ -123,7 +123,7 @@ def cmd_select(fmcos: FMCOS, args: argparse.Namespace) -> int:
             return 1
 
         log(f"Selecting by file ID: {file_id:04X}")
-        fci, success = fmcos.select_file(file_id, keep_field=False)
+        fci, success = fmcos.select_file(file_id, select=True, keep_field=False)
 
     if success:
         log_success("File/DF selected successfully")
@@ -166,7 +166,7 @@ def cmd_read_bin(fmcos: FMCOS, args: argparse.Namespace) -> int:
 
     log(f"Reading binary: offset={offset}, length={length}, SFI={sfi}")
 
-    data, success = fmcos.read_binary(offset, length, sfi, keep_field=False)
+    data, success = fmcos.read_binary(offset, length, sfi, select=True, keep_field=False)
 
     if success:
         log_success(f"Read {len(data)} bytes:")
@@ -195,7 +195,7 @@ def cmd_write_bin(fmcos: FMCOS, args: argparse.Namespace) -> int:
 
     log(f"Writing binary: offset={offset}, {len(data)} bytes, SFI={sfi}")
 
-    if fmcos.update_binary(offset, data, sfi, keep_field=False):
+    if fmcos.update_binary(offset, data, sfi, select=True, keep_field=False):
         log_success("Write successful")
         return 0
     else:
@@ -220,7 +220,7 @@ def cmd_read_rec(fmcos: FMCOS, args: argparse.Namespace) -> int:
 
     log(f"Reading record: num={rec_num}, SFI={sfi}")
 
-    data, success = fmcos.read_record(rec_num, sfi, keep_field=False)
+    data, success = fmcos.read_record(rec_num, sfi, select=True, keep_field=False)
 
     if success:
         log_success(f"Read {len(data)} bytes:")
@@ -259,7 +259,7 @@ def cmd_write_rec(fmcos: FMCOS, args: argparse.Namespace) -> int:
 
     log(f"Updating record {record_num}, SFI={sfi}, {len(data)} bytes")
 
-    success = fmcos.update_record(record_num, data, sfi, keep_field=False)
+    success = fmcos.update_record(record_num, data, sfi, select=True, keep_field=False)
 
     if success:
         log_success("Record updated")
@@ -289,7 +289,7 @@ def cmd_challenge(fmcos: FMCOS, args: argparse.Namespace) -> int:
 
     log(f"Requesting {length}-byte challenge...")
 
-    challenge, success = fmcos.get_challenge(length, keep_field=False)
+    challenge, success = fmcos.get_challenge(length, select=True, keep_field=False)
 
     if success:
         log_success(f"Challenge: {challenge.hex().upper()}")
@@ -316,7 +316,7 @@ def cmd_verify(fmcos: FMCOS, args: argparse.Namespace) -> int:
 
     log(f"Verifying PIN for key {key_id:02X}")
 
-    retries, success = fmcos.verify_pin(key_id, pin, keep_field=False)
+    retries, success = fmcos.verify_pin(key_id, pin, select=True, keep_field=False)
 
     if success:
         log_success("PIN verified successfully")
@@ -345,7 +345,7 @@ def cmd_balance(fmcos: FMCOS, args: argparse.Namespace) -> int:
 
     log(f"Reading {app_name} balance...")
 
-    balance, success = fmcos.get_balance(app_type, keep_field=False)
+    balance, success = fmcos.get_balance(app_type, select=True, keep_field=False)
 
     if success:
         yuan = balance // 100
@@ -384,7 +384,7 @@ def cmd_ext_auth(fmcos: FMCOS, args: argparse.Namespace) -> int:
 
     log(f"External authenticate with key {key_id:02X}")
 
-    success = fmcos.external_auth(key_id, encrypted_rnd, keep_field=False)
+    success = fmcos.external_auth(key_id, encrypted_rnd, select=True, keep_field=False)
 
     if success:
         log_success("External authentication successful")
@@ -496,7 +496,7 @@ def cmd_int_auth(fmcos: FMCOS, args: argparse.Namespace) -> int:
 
     log(f"Internal authenticate with key {key_id:02X}, {len(data)} bytes")
 
-    result, success = fmcos.internal_auth(key_id, data, operation=0x00, keep_field=False)
+    result, success = fmcos.internal_auth(key_id, data, operation=0x00, select=True, keep_field=False)
 
     if success:
         log_success(f"Result: {result.hex().upper()}")
