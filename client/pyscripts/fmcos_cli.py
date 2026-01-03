@@ -1093,6 +1093,353 @@ def cmd_explore(fmcos: FMCOS, args: argparse.Namespace) -> int:
 
 
 # =============================================================================
+# REPL Mode - Interactive Shell
+# =============================================================================
+
+def execute_repl_command(fmcos: FMCOS, cmd: str, args: list[str], debug: bool = False) -> bool:
+    """
+    Execute a single command in REPL mode.
+
+    Args:
+        fmcos: FMCOS interface instance.
+        cmd: Command name.
+        args: Command arguments.
+        debug: Debug mode flag.
+
+    Returns:
+        True if command executed successfully, False otherwise.
+    """
+    try:
+        if cmd == "select":
+            if not args:
+                log_error("Usage: select <fid> [--name]")
+                return False
+            use_name = "--name" in args
+            fid = args[0]
+            if use_name:
+                fci, success = fmcos.select_df(fid, keep_field=True)
+            else:
+                fci, success = fmcos.select_file(int(fid, 16), keep_field=True)
+            if success:
+                log_success(f"Selected: {fid}")
+                if fci:
+                    log(f"  FCI: {fci.hex().upper()}")
+            else:
+                sw1, sw2 = fmcos.last_sw
+                log_error(f"Select failed: {fmcos.get_sw_description(sw1, sw2)}")
+            return success
+
+        elif cmd == "read_bin":
+            offset = int(args[0], 0) if args else 0
+            length = int(args[1], 0) if len(args) > 1 else 0
+            sfi = None
+            if "--sfi" in args:
+                idx = args.index("--sfi")
+                sfi = int(args[idx + 1], 0) if idx + 1 < len(args) else None
+            data, success = fmcos.read_binary(offset, length, sfi, keep_field=True)
+            if success:
+                log_success(f"Read {len(data)} bytes:")
+                print(hex_dump(data))
+            else:
+                sw1, sw2 = fmcos.last_sw
+                log_error(f"Read failed: {fmcos.get_sw_description(sw1, sw2)}")
+            return success
+
+        elif cmd == "write_bin":
+            if len(args) < 2:
+                log_error("Usage: write_bin <offset> <hex_data>")
+                return False
+            offset = int(args[0], 0)
+            data = bytes.fromhex(args[1].replace(" ", ""))
+            sfi = None
+            if "--sfi" in args:
+                idx = args.index("--sfi")
+                sfi = int(args[idx + 1], 0) if idx + 1 < len(args) else None
+            success = fmcos.update_binary(offset, data, sfi, keep_field=True)
+            if success:
+                log_success(f"Wrote {len(data)} bytes at offset {offset}")
+            else:
+                sw1, sw2 = fmcos.last_sw
+                log_error(f"Write failed: {fmcos.get_sw_description(sw1, sw2)}")
+            return success
+
+        elif cmd == "read_rec":
+            if not args:
+                log_error("Usage: read_rec <record_num> [--sfi N]")
+                return False
+            rec_num = int(args[0], 0)
+            sfi = None
+            if "--sfi" in args:
+                idx = args.index("--sfi")
+                sfi = int(args[idx + 1], 0) if idx + 1 < len(args) else None
+            data, success = fmcos.read_record(rec_num, sfi, keep_field=True)
+            if success:
+                log_success(f"Record {rec_num}: {len(data)} bytes")
+                print(hex_dump(data))
+            else:
+                sw1, sw2 = fmcos.last_sw
+                log_error(f"Read record failed: {fmcos.get_sw_description(sw1, sw2)}")
+            return success
+
+        elif cmd == "write_rec":
+            if len(args) < 2:
+                log_error("Usage: write_rec <record_num> <hex_data>")
+                return False
+            rec_num = int(args[0], 0)
+            data = bytes.fromhex(args[1].replace(" ", ""))
+            sfi = None
+            if "--sfi" in args:
+                idx = args.index("--sfi")
+                sfi = int(args[idx + 1], 0) if idx + 1 < len(args) else None
+            success = fmcos.update_record(rec_num, data, sfi, keep_field=True)
+            if success:
+                log_success(f"Updated record {rec_num}")
+            else:
+                sw1, sw2 = fmcos.last_sw
+                log_error(f"Write record failed: {fmcos.get_sw_description(sw1, sw2)}")
+            return success
+
+        elif cmd == "ext_auth":
+            if len(args) < 2:
+                log_error("Usage: ext_auth <key_id> <key_hex>")
+                return False
+            key_id = int(args[0], 16)
+            key_hex = args[1].replace(" ", "")
+            key_bytes = bytes.fromhex(key_hex)
+            # Fast external auth flow
+            challenge, ok = fmcos.get_challenge(4, keep_field=True)
+            if not ok:
+                log_error("Failed to get challenge")
+                return False
+            padded = challenge + b'\x00' * 4
+            des = SimpleDES(key_bytes)
+            encrypted = des.encrypt(padded)
+            success = fmcos.external_auth(key_id, encrypted, keep_field=True)
+            if success:
+                log_success(f"External auth with key {key_id:02X} succeeded")
+            else:
+                sw1, sw2 = fmcos.last_sw
+                log_error(f"External auth failed: {fmcos.get_sw_description(sw1, sw2)}")
+            return success
+
+        elif cmd == "verify":
+            if len(args) < 2:
+                log_error("Usage: verify <key_id> <pin>")
+                return False
+            key_id = int(args[0], 16)
+            pin = args[1]
+            retries, success = fmcos.verify_pin(key_id, pin, keep_field=True)
+            if success:
+                log_success("PIN verified")
+            else:
+                log_error(f"PIN failed, {retries} retries left" if retries > 0 else "PIN locked")
+            return success
+
+        elif cmd == "challenge":
+            length = int(args[0], 0) if args else 8
+            data, success = fmcos.get_challenge(length, keep_field=True)
+            if success:
+                log_success(f"Challenge: {data.hex().upper()}")
+            else:
+                sw1, sw2 = fmcos.last_sw
+                log_error(f"Get challenge failed: {fmcos.get_sw_description(sw1, sw2)}")
+            return success
+
+        elif cmd == "info":
+            info = fmcos.get_card_info(keep_field=True)
+            log(f"UID: {info.get('uid', 'N/A')}")
+            log(f"ATQA: {info.get('atqa', 'N/A')}")
+            log(f"SAK: {info.get('sak', 'N/A')}")
+            return info.get("mf_selected", False)
+
+        elif cmd == "debug":
+            if args and args[0].lower() == "on":
+                fmcos.debug = True
+                log_success("Debug mode ON")
+            elif args and args[0].lower() == "off":
+                fmcos.debug = False
+                log_success("Debug mode OFF")
+            else:
+                log(f"Debug mode: {'ON' if fmcos.debug else 'OFF'}")
+            return True
+
+        elif cmd == "help":
+            log("Available commands:")
+            log("  select <fid> [--name]      Select file by FID or DF name")
+            log("  read_bin [off] [len]       Read binary file")
+            log("  write_bin <off> <data>     Write binary file")
+            log("  read_rec <num> [--sfi N]   Read record")
+            log("  write_rec <num> <data>     Write record")
+            log("  ext_auth <kid> <key>       External authenticate")
+            log("  verify <kid> <pin>         Verify PIN")
+            log("  challenge [len]            Get random challenge")
+            log("  info                       Display card info")
+            log("  debug [on|off]             Toggle debug mode")
+            log("  reconnect                  Re-select card")
+            log("  exit / quit                Exit REPL")
+            return True
+
+        elif cmd == "reconnect":
+            fci, success = fmcos.select_mf(select=True, keep_field=True)
+            if success:
+                log_success("Reconnected to card")
+            else:
+                log_error("Reconnect failed")
+            return success
+
+        else:
+            log_error(f"Unknown command: {cmd}. Type 'help' for available commands.")
+            return False
+
+    except ValueError as e:
+        log_error(f"Invalid argument: {e}")
+        return False
+    except Exception as e:
+        log_error(f"Error executing '{cmd}': {e}")
+        return False
+
+
+def cmd_repl(fmcos: FMCOS, args: argparse.Namespace) -> int:
+    """
+    Interactive REPL mode for multi-command sessions.
+
+    Maintains card session across multiple commands. RF field stays active
+    until 'exit' command.
+
+    Args:
+        fmcos: FMCOS interface instance.
+        args: Command line arguments.
+
+    Returns:
+        0 on success, 1 on failure.
+    """
+    log(f"{SCRIPT_NAME} v{__version__} - Interactive Mode")
+    log("Type 'help' for commands, 'exit' to quit")
+    log()
+
+    # Warn about RF field timeout
+    log_warn("NOTE: PM3 RF field may timeout (~5s) during slow input.")
+    log_warn("For authenticated operations, use 'run --script' mode instead.")
+    log_warn("Use 'reconnect' command if field drops.")
+    log()
+
+    # Initialize session - select card and MF
+    fci, success = fmcos.select_mf(select=True, keep_field=True)
+    if not success:
+        log_error("Failed to initialize card session")
+        return 1
+
+    log_success("Card session initialized (MF selected)")
+    log()
+
+    while True:
+        try:
+            line = input("[FMCOS]> ").strip()
+
+            if not line:
+                continue
+
+            if line.lower() in ("exit", "quit"):
+                log("Releasing RF field...")
+                fmcos.disconnect()
+                log_success("Goodbye!")
+                break
+
+            # Parse command and arguments
+            parts = line.split()
+            cmd = parts[0].lower()
+            cmd_args = parts[1:]
+
+            execute_repl_command(fmcos, cmd, cmd_args, debug=fmcos.debug)
+
+        except KeyboardInterrupt:
+            log("\nUse 'exit' to quit")
+        except EOFError:
+            log("\nEOF detected, exiting...")
+            fmcos.disconnect()
+            break
+        except Exception as e:
+            log_error(f"Error: {e}")
+
+    return 0
+
+
+def cmd_run(fmcos: FMCOS, args: argparse.Namespace) -> int:
+    """
+    Execute commands from a script file.
+
+    Reads commands from file (one per line), skips comments (#) and empty lines.
+    Session is maintained across all commands.
+
+    Args:
+        fmcos: FMCOS interface instance.
+        args: Command line arguments containing script file path.
+
+    Returns:
+        0 on success, 1 on failure.
+    """
+    script_file = getattr(args, 'script_file', None)
+    if not script_file:
+        log_error("Script file required. Use: -c run -f <file>")
+        return 1
+
+    try:
+        with open(script_file, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+    except FileNotFoundError:
+        log_error(f"Script file not found: {script_file}")
+        return 1
+    except Exception as e:
+        log_error(f"Failed to read script file: {e}")
+        return 1
+
+    # Filter out empty lines and comments
+    commands = []
+    for line_num, line in enumerate(lines, 1):
+        line = line.strip()
+        if line and not line.startswith('#'):
+            commands.append((line_num, line))
+
+    if not commands:
+        log_warn("Script file is empty or contains only comments")
+        return 0
+
+    log(f"{SCRIPT_NAME} - Executing script: {script_file}")
+    log(f"Commands to execute: {len(commands)}")
+    log()
+
+    # Initialize session with first command
+    fci, success = fmcos.select_mf(select=True, keep_field=True)
+    if not success:
+        log_error("Failed to initialize card session")
+        return 1
+
+    failed = 0
+    for i, (line_num, line) in enumerate(commands):
+        parts = line.split()
+        cmd = parts[0].lower()
+        cmd_args = parts[1:]
+
+        log(f"[{i+1}/{len(commands)}] Line {line_num}: {line}")
+
+        success = execute_repl_command(fmcos, cmd, cmd_args, debug=fmcos.debug)
+        if not success:
+            failed += 1
+            log_warn(f"  Command failed, continuing...")
+
+    # Release RF field after all commands
+    fmcos.disconnect()
+
+    log()
+    if failed == 0:
+        log_success(f"Script completed: {len(commands)} commands executed successfully")
+    else:
+        log_warn(f"Script completed: {len(commands) - failed}/{len(commands)} commands succeeded")
+
+    return 0 if failed == 0 else 1
+
+
+# =============================================================================
 # Argument Parsing
 # =============================================================================
 
@@ -1119,6 +1466,8 @@ Examples:
   script run fmcos_cli -c create -f 0001 --filetype binary -l 256   Create 256-byte binary EF
   script run fmcos_cli -c create -f DF01 --filetype df -d "MyApp"   Create DF with name
   script run fmcos_cli -c fast_ext_auth -k 00 -d FFFFFFFFFFFFFFFF   Fast auth
+  script run fmcos_cli -c repl                          Interactive REPL mode
+  script run fmcos_cli -c run --script commands.txt     Execute script file
   script run fmcos_cli -c test                          Run test suite
         """,
     )
@@ -1128,10 +1477,12 @@ Examples:
         choices=["info", "select", "read_bin", "write_bin", "read_rec", "write_rec",
                  "challenge", "verify", "ext_auth", "int_auth", "fast_ext_auth",
                  "write_key", "create", "erase_df", "balance", "init_load",
-                 "init_purchase", "test", "explore"],
+                 "init_purchase", "test", "explore", "repl", "run"],
         default="info",
         help="Command to execute (default: info)",
     )
+    parser.add_argument("--script", dest="script_file",
+                        help="Script file for 'run' command (one command per line)")
     parser.add_argument("-f", "--file", default="3F00", help="File ID (hex) or DF name")
     parser.add_argument("-n", "--name", action="store_true",
                         help="Select by DF name (P1=04) instead of file ID (P1=00)")
@@ -1209,6 +1560,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "init_purchase": cmd_init_purchase,
         "test": cmd_test,
         "explore": cmd_explore,
+        "repl": cmd_repl,
+        "run": cmd_run,
     }
 
     handler = commands.get(args.command, cmd_info)
