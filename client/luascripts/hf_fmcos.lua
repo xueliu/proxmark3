@@ -282,7 +282,7 @@ local function cmd_update_record(opts)
     return ok
 end
 
---- ext_auth <kid> <key>
+--- ext_auth <kid> <key> (or -a <kid> -k <key>)
 local function cmd_ext_auth(opts)
     -- Select first if specified
     if opts.select_fid then
@@ -292,13 +292,16 @@ local function cmd_ext_auth(opts)
         end
     end
     
-    local kid = parse_number(opts.positional[1], 16)
-    local key = parse_hex(opts.positional[2])
+    local kid = opts.auth_kid or parse_number(opts.positional[1], 16)
+    local key = opts.auth_key or parse_hex(opts.positional[2])
     
     if not kid or not key then
-        fmcos.log_error("ext_auth: key_id and key required")
+        fmcos.log_error("ext_auth: -a <kid> and -k <key> required")
         return false
     end
+    
+    -- If pre-command already authenticated using these same keys, we might be re-authing.
+    -- But since command is explicit ext_auth, we do it anyway.
     
     local ok, sw1, sw2, err = fmcos.fast_ext_auth(kid, key, true)
     return ok
@@ -754,7 +757,23 @@ end
 -- Command Registry
 -- =============================================================================
 
-COMMANDS = {
+--- read_record <rec_num> [len]
+local function cmd_read_record(opts)
+    if not do_pre_command(opts) then return false end
+    
+    local rec_num = parse_number(opts.positional[1])
+    if not rec_num then
+        fmcos.log_error("read_record: <rec_num> required")
+        return false
+    end
+    
+    local len = parse_number(opts.positional[2]) -- Optional length
+    
+    local resp, sw1, sw2, err = fmcos.read_record(rec_num, opts.named.sfi, len, true)
+    return resp ~= nil
+end
+
+local COMMANDS = {
     select = cmd_select,
     read_binary = cmd_read_binary,
     update_binary = cmd_update_binary,
@@ -776,78 +795,184 @@ COMMANDS = {
 -- Help
 -- =============================================================================
 
-local function help()
+-- =============================================================================
+-- Help System (NetExec Style)
+-- =============================================================================
+
+local COMMAND_HELP = {
+    select = [[
+Usage: select [options] <fid>
+       select -n <name>
+
+Select a file by File ID (FID) or DF by Name.
+
+Options:
+    -n <name>       Select DF by application name (string)
+    -s <fid>        (Common) Select parent first
+]],
+    read_binary = [[
+Usage: read_binary [options] <offset> <len>
+
+Read binary data from the currently selected or specified EF.
+
+Arguments:
+    offset          Start offset (hex or dec)
+    len             Number of bytes to read
+
+Options:
+    -s <fid>        Select file first
+    -a <kid>        Auth with Key ID before read
+    -k <key>        Auth Key Value
+]],
+    update_binary = [[
+Usage: update_binary [options] <offset> <data>
+
+Write binary data to the currently selected or specified EF.
+
+Arguments:
+    offset          Start offset
+    data            Hex string data to write
+
+Options:
+    -s <fid>        Select file first
+    -a <key_id>     Auth Key ID
+    -k <key>        Auth Key
+]],
+    read_record = [[
+Usage: read_record [options] <rec_num> [len]
+
+Read a record from a Record EF.
+
+Arguments:
+    rec_num         Record Number (1-based)
+    len             Length to read (optional, default=256/00)
+
+Options:
+    -s <fid>        Select file first
+    --sfi <sfi>     Use Short File Identifier (SFI) for access
+]],
+    update_record = [[
+Usage: update_record [options] <rec_num> <data>
+
+Update a record in a Record EF.
+
+Arguments:
+    rec_num         Record Number
+    data            Hex string data
+
+Options:
+    -s <fid>        Select file first
+    --sfi <sfi>     Use Short File Identifier (SFI)
+]],
+    create_file = [[
+Usage: create_file --type <type> [options] <fid_or_args...>
+
+Create a new file in the current DF.
+
+Types:
+    df              Create Dedicated File (DF)
+                    Args: <fid> <space> [name]
+    binary          Create Binary EF
+                    Args: <fid> <size>
+    fixed           Create Fixed Record EF
+                    Args: <fid> <rec_len> <rec_count>
+                    (Note: Perms default to FFFFFFFFFF, SFI default 01)
+    cyclic          Create Cyclic Record EF
+                    Args: <fid> <rec_len> <rec_count>
+    key             Create Key File
+                    Args: <slots>
+
+Options:
+    --perm <hex>    Permission bytes (5 bytes, default FFFFFFFFFF)
+    --sfi <val>     SFI value (Record files only, default 01)
+]],
+    write_key = [[
+Usage: write_key [options] <kid> [data]
+
+Write or Update a Key or PIN.
+
+Options:
+    --type <type>   Key type: pin, ext_auth, master
+    --pin <str>     PIN value (String)
+    --key <hex>     Key value (Hex)
+    --level <hex>   Security Level (default 0F)
+]],
+    verify = [[
+Usage: verify <kid> --pin <str>
+
+Verify a PIN.
+]],
+    explore = [[
+Usage: explore [options]
+
+Scan for valid FIDs in range.
+
+Options:
+    --mode ef|df    Scan EFs or DFs (default: ef)
+    --start <fid>   Start FID
+    --end <fid>     End FID
+]],
+    run = [[
+Usage: run -f <file>
+
+Execute a script file containing hf_fmcos commands.
+]],
+    apdu = [[
+Usage: apdu <hex>
+
+Send a raw APDU to the card (useful for debugging).
+]],
+    ext_auth = [[
+Usage: ext_auth <kid> <key>
+
+Perform External Authentication.
+]],
+    erase_df = [[
+Usage: erase_df
+
+Erase the currently selected Dedicated File (DF).
+]],
+    balance = [[
+Usage: balance [type]
+
+Get Electronic Purse/Wallet balance.
+Type: 01 (Passbook), 02 (Purse). Default 02.
+]],
+    challenge = [[
+Usage: challenge [len]
+
+Get a random challenge from the card.
+]]
+}
+
+local function help(cmd_name)
     print(copyright)
-    print(author)
-    print(version)
     print(desc)
-    print(ansicolors.cyan .. 'Usage' .. ansicolors.reset)
-    print(usage)
-    print(ansicolors.cyan .. 'Commands' .. ansicolors.reset)
-    print([[
-    select <fid>            Select file by FID
-    select -n <name>        Select DF by name
-    
-    read_binary <off> <len> Read binary file
-    update_binary <off> <data>  Write binary file
-    read_record <num>       Read record
-    update_record <num> <data>  Write record
-    
-    ext_auth <kid> <key>    External authentication
-    verify <kid> <pin>      Verify PIN
-    challenge [len]         Get random challenge
-    
-    create_file --type <type> [args]  Create file
-        --type df <fid> <space> [name]        Create DF
-        --type binary <fid> <size>            Create binary EF
-        --type fixed <fid> <len> <count>      Create fixed record EF
-        --type cyclic <fid> <len> <count>     Create cyclic record EF
-        --type key <slots>                    Create key file
-    
-    write_key <kid> [data]  Write key
-        --type <type>       pin, ext_auth, master
-        --pin <str>         PIN string (ASCII)
-        --key <hex>         Key value (Hex)
-        --level <hex>       Security level (default: 0F)
-        --retry <int>       Retry count (default: 3)
+    print("")
+
+    if cmd_name and COMMAND_HELP[cmd_name] then
+        print(ansicolors.cyan .. "Command: " .. cmd_name .. ansicolors.reset)
+        print(COMMAND_HELP[cmd_name])
         
-    verify <kid> [pin]      Verify PIN
-        --pin <str>         PIN string (ASCII)
-        
-    erase_df                Erase current DF
-    balance [type]          Get balance (01=passbook, 02=purse)
-    apdu <hex>              Send raw APDU (debug)
+        print(ansicolors.cyan .. "\nCommon Options:" .. ansicolors.reset)
+        print("    -s <fid>     Select file first")
+        print("    -a <kid>     External Auth Key ID")
+        print("    -k <key>     External Auth Key (Hex)")
+        print("    -d           Enable debug output")
+        return
+    end
+
+    print(ansicolors.cyan .. "Available Commands:" .. ansicolors.reset)
+    local cmds = {}
+    for k, v in pairs(COMMAND_HELP) do table.insert(cmds, k) end
+    table.sort(cmds)
     
-    explore [options]       Scan file system
-        --mode ef|df        Scan EFs or DFs (default: ef)
-        --start XXXX        Start FID (default: 0000 for EF, DF01 for DF)
-        --end XXXX          End FID (default: 0020 for EF, DF10 for DF)
-    
-    run -f <file>           Execute script file
-]])
-    print(ansicolors.cyan .. 'Common Options' .. ansicolors.reset)
-    print([[
-    -s <fid>        Select file first (before command)
-    -a <kid>        Key ID for external authentication
-    -k <key>        Key value (16 hex chars for DES)
-    -d              Enable debug output
-    --sfi <sfi>     Short file identifier
-    --perm <hex>    Permission bytes
-]])
-    print(ansicolors.cyan .. 'Examples' .. ansicolors.reset)
-    print([[
-    # Select MF
-    script run hf_fmcos select 3F00
-
-    # Create DF with auth
-    script run hf_fmcos create_file --type df -s 3F00 -a 00 -k FFFFFFFFFFFFFFFF 3F01 08 1122334455
-
-    # Read binary
-    script run hf_fmcos read_binary -s 0001 0 16
-
-    # Run script
-    script run hf_fmcos run -f pboc_setup.txt
-]])
+    -- Print in columns or list
+    for _, k in ipairs(cmds) do
+        print(string.format("    %-15s", k))
+    end
+    print("")
+    print("Use 'hf_fmcos <command> --help' for command-specific usage.")
 end
 
 -- =============================================================================
@@ -855,11 +980,9 @@ end
 -- =============================================================================
 
 function main(args)
-    -- PM3 passes args as a string, need to convert to table
+    -- Parse args from PM3
     local args_table = {}
-    
     if type(args) == "string" and #args > 0 then
-        -- Split string by spaces
         for part in args:gmatch('%S+') do
             table.insert(args_table, part)
         end
@@ -867,48 +990,49 @@ function main(args)
         args_table = args
     end
     
-    -- Handle empty args
+    -- No Args -> Global Help
     if #args_table == 0 then
-        return help()
+        return help(nil)
     end
     
-    local cmd_name = args_table[1]
-    if not cmd_name then
-        return help()
-    end
-    cmd_name = cmd_name:lower()
-    
-    -- Check for help
-    if cmd_name == 'help' or cmd_name == '-h' or cmd_name == '--help' then
-        return help()
+    -- Global Help flag?
+    if args_table[1] == '-h' or args_table[1] == '--help' then
+        return help(nil)
     end
     
-    -- Check if command exists
+    local cmd_name = args_table[1]:lower()
+    
+    -- Check for sub-command help (e.g. create_file --help)
+    for _, arg in ipairs(args_table) do
+        if arg == '-h' or arg == '--help' then
+            return help(cmd_name)
+        end
+    end
+    
+    -- Validate command
     if not COMMANDS[cmd_name] then
         fmcos.log_error("Unknown command: " .. cmd_name)
-        print("Available commands: select, read_binary, update_binary, read_record, update_record,")
-        print("  ext_auth, verify, challenge, create_file, write_key, erase_df, balance, explore, run")
+        help(nil) -- Show list
         return
     end
     
-    -- Parse options
+    -- Parse Options (excluding cmd_name which is at index 1 generally, but parse_common_options handles skip)
     local opts = parse_common_options(args_table, 2)
     fmcos.set_debug(opts.debug)
     
-    -- Connect to card
+    -- Connect
     local card_info, err = fmcos.connect()
     if not card_info then
         return
     end
     
-    -- Execute command
+    -- Execute
     local ok = COMMANDS[cmd_name](opts)
     
-    -- Disconnect
     fmcos.disconnect()
     
     if ok then
-        fmcos.log_success("Done")
+        -- fmcos.log_success("Done") -- clean output
     end
 end
 
