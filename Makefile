@@ -169,8 +169,12 @@ fpga_compress/%: FORCE cleanifplatformchanged
 	$(info [*] MAKE $@)
 	$(Q)$(MAKE) --no-print-directory -C tools/fpga_compress $(patsubst fpga_compress/%,%,$@) DESTDIR=$(MYDESTDIR)
 bootrom/%: FORCE cleanifplatformchanged
+ifeq ($(PLATFORM),PM4)
+	$(info [*] SKIP bootrom (Not supported on PM4))
+else
 	$(info [*] MAKE $@)
 	$(Q)$(MAKE) --no-print-directory -C bootrom $(patsubst bootrom/%,%,$@) DESTDIR=$(MYDESTDIR)
+endif
 armsrc/%: FORCE cleanifplatformchanged fpga_compress/%
 	$(info [*] MAKE $@)
 	$(Q)$(MAKE) --no-print-directory -C armsrc $(patsubst armsrc/%,%,$@) DESTDIR=$(MYDESTDIR)
@@ -180,8 +184,12 @@ client/%: FORCE cleanifplatformchanged
 recovery/all: bootrom/all armsrc/all
 recovery/install: bootrom/install armsrc/install
 recovery/%: FORCE cleanifplatformchanged
+ifeq ($(PLATFORM),PM4)
+	$(info [*] SKIP recovery (Not supported on PM4))
+else
 	$(info [*] MAKE $@)
 	$(Q)$(MAKE) --no-print-directory -C recovery $(patsubst recovery/%,%,$@) DESTDIR=$(MYDESTDIR)
+endif
 hitag2crack/%: FORCE
 	$(info [*] MAKE $@)
 	$(Q)$(MAKE) --no-print-directory -C tools/hitag2crack $(patsubst hitag2crack/%,%,$@) DESTDIR=$(MYDESTDIR)
