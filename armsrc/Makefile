@@ -171,7 +171,7 @@ VERSIONSRC = version_pm3.c \
     fpga_version_info.c
 
 
-ASMSRC = ../common_riscv/crt0.S
+ASMSRC =
 
 # TODO:
 # Do not move this inclusion before the definition of {THUMB,ASM,ARM}SRC
@@ -195,6 +195,8 @@ showinfo:
 	$(info ARMSRC=$(ARMSRC))
 	$(info THUMBOBJ=$(THUMBOBJ))
 	$(info ARMOBJ=$(ARMOBJ))
+	$(info ASMSRC=$(ASMSRC))
+	$(info VPATH=$(VPATH))
 	$(info compiler version:  $(shell $(CROSS_CC) --version|head -n 1))
 
 .DELETE_ON_ERROR:
@@ -229,6 +231,11 @@ $(FPGA_COMPRESSOR):
 # Redefine objects locally to verify expansion
 THUMBOBJ := $(patsubst %.c,$(OBJDIR)/%.o,$(notdir $(THUMBSRC)))
 ARMOBJ   := $(patsubst %.c,$(OBJDIR)/%.o,$(notdir $(ARMSRC)))
+ASMOBJ   := $(OBJDIR)/crt0.o
+
+$(OBJDIR)/crt0.o: ../common_riscv/crt0.S
+	$(info [-] CC $<)
+	$(Q)$(CROSS_CC) $(CROSS_CFLAGS) -o $@ $<
 
 $(THUMBOBJ): $(OBJDIR)/%.o: %.c $(INCLUDES)
 	$(info [-] CC $<)
@@ -301,7 +308,4 @@ help:
 	@echo +	all    - Build the full image $(OBJDIR)/fullimage.s19
 	@echo +	clean             - Clean $(OBJDIR)
 
-$(OBJDIR)/crt0.o: ../common_riscv/crt0.S
-	$(info [-] CC $<)
-	$(Q)$(CROSS_CC) $(CROSS_CFLAGS) -o $@ $<
 
