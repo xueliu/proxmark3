@@ -7,17 +7,17 @@ Register Listing for CTRL
 +------------------------------------------+-------------------------------------+
 | Register                                 | Address                             |
 +==========================================+=====================================+
-| :ref:`CTRL_RESET <CTRL_RESET>`           | :ref:`0xf0001000 <CTRL_RESET>`      |
+| :ref:`CTRL_RESET <CTRL_RESET>`           | :ref:`0xf0002000 <CTRL_RESET>`      |
 +------------------------------------------+-------------------------------------+
-| :ref:`CTRL_SCRATCH <CTRL_SCRATCH>`       | :ref:`0xf0001004 <CTRL_SCRATCH>`    |
+| :ref:`CTRL_SCRATCH <CTRL_SCRATCH>`       | :ref:`0xf0002004 <CTRL_SCRATCH>`    |
 +------------------------------------------+-------------------------------------+
-| :ref:`CTRL_BUS_ERRORS <CTRL_BUS_ERRORS>` | :ref:`0xf0001008 <CTRL_BUS_ERRORS>` |
+| :ref:`CTRL_BUS_ERRORS <CTRL_BUS_ERRORS>` | :ref:`0xf0002008 <CTRL_BUS_ERRORS>` |
 +------------------------------------------+-------------------------------------+
 
 CTRL_RESET
 ^^^^^^^^^^
 
-`Address: 0xf0001000 + 0x0 = 0xf0001000`
+`Address: 0xf0002000 + 0x0 = 0xf0002000`
 
 
     .. wavedrom::
@@ -43,11 +43,11 @@ CTRL_RESET
 CTRL_SCRATCH
 ^^^^^^^^^^^^
 
-`Address: 0xf0001000 + 0x4 = 0xf0001004`
+`Address: 0xf0002000 + 0x4 = 0xf0002004`
 
     Use this register as a scratch space to verify that software read/write accesses
     to the Wishbone/CSR bus are working correctly. The initial reset value of
-    0x1234578 can be used to verify endianness.
+    0x12345678 can be used to verify endianness.
 
     .. wavedrom::
         :caption: CTRL_SCRATCH
@@ -62,7 +62,7 @@ CTRL_SCRATCH
 CTRL_BUS_ERRORS
 ^^^^^^^^^^^^^^^
 
-`Address: 0xf0001000 + 0x8 = 0xf0001008`
+`Address: 0xf0002000 + 0x8 = 0xf0002008`
 
     Total number of Wishbone bus errors (timeouts) since start.
 

@@ -19,14 +19,14 @@ Register Groups
     :maxdepth: 1
 
     leds
+    counter
+    iso7816
     buttons
     ctrl
     identifier_mem
     sdram
     serial1
     serial2
-    spiflash_core
-    spiflash_phy
     timer0
     timer1
     timer2

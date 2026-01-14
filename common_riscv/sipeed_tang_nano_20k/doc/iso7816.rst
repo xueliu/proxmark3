@@ -1,0 +1,354 @@
+ISO7816
+=======
+
+Register Listing for ISO7816
+----------------------------
+
++------------------------------------------------+----------------------------------------+
+| Register                                       | Address                                |
++================================================+========================================+
+| :ref:`ISO7816_CSR <ISO7816_CSR>`               | :ref:`0xf0001000 <ISO7816_CSR>`        |
++------------------------------------------------+----------------------------------------+
+| :ref:`ISO7816_DATA <ISO7816_DATA>`             | :ref:`0xf0001004 <ISO7816_DATA>`       |
++------------------------------------------------+----------------------------------------+
+| :ref:`ISO7816_MISC <ISO7816_MISC>`             | :ref:`0xf0001008 <ISO7816_MISC>`       |
++------------------------------------------------+----------------------------------------+
+| :ref:`ISO7816_WT <ISO7816_WT>`                 | :ref:`0xf000100c <ISO7816_WT>`         |
++------------------------------------------------+----------------------------------------+
+| :ref:`ISO7816_BRG_RATE <ISO7816_BRG_RATE>`     | :ref:`0xf0001010 <ISO7816_BRG_RATE>`   |
++------------------------------------------------+----------------------------------------+
+| :ref:`ISO7816_BRG_PHASE <ISO7816_BRG_PHASE>`   | :ref:`0xf0001014 <ISO7816_BRG_PHASE>`  |
++------------------------------------------------+----------------------------------------+
+| :ref:`ISO7816_EV_STATUS <ISO7816_EV_STATUS>`   | :ref:`0xf0001018 <ISO7816_EV_STATUS>`  |
++------------------------------------------------+----------------------------------------+
+| :ref:`ISO7816_EV_PENDING <ISO7816_EV_PENDING>` | :ref:`0xf000101c <ISO7816_EV_PENDING>` |
++------------------------------------------------+----------------------------------------+
+| :ref:`ISO7816_EV_ENABLE <ISO7816_EV_ENABLE>`   | :ref:`0xf0001020 <ISO7816_EV_ENABLE>`  |
++------------------------------------------------+----------------------------------------+
+
+ISO7816_CSR
+^^^^^^^^^^^
+
+`Address: 0xf0001000 + 0x0 = 0xf0001000`
+
+    Control & Status Register
+
+    .. wavedrom::
+        :caption: ISO7816_CSR
+
+        {
+            "reg": [
+                {"name": "rx_en",  "bits": 1},
+                {"bits": 1},
+                {"name": "rx_ef",  "bits": 1},
+                {"name": "rx_ep",  "bits": 1},
+                {"name": "rx_fc",  "bits": 1},
+                {"name": "rx_fo",  "bits": 1},
+                {"name": "rx_ff",  "bits": 1},
+                {"name": "rx_fe",  "bits": 1},
+                {"name": "tx_en",  "bits": 1},
+                {"bits": 2},
+                {"name": "tx_ep",  "bits": 1},
+                {"name": "tx_fc",  "bits": 1},
+                {"name": "tx_fo",  "bits": 1},
+                {"name": "tx_ff",  "bits": 1},
+                {"name": "tx_fe",  "bits": 1},
+                {"name": "wt_ce",  "bits": 1},
+                {"bits": 15}
+            ], "config": {"hspace": 400, "bits": 32, "lanes": 4 }, "options": {"hspace": 400, "bits": 32, "lanes": 4}
+        }
+
+
++-------+-------+--------------------------+
+| Field | Name  | Description              |
++=======+=======+==========================+
+| [0]   | RX_EN | RX Enable                |
++-------+-------+--------------------------+
+| [2]   | RX_EF | RX Error Frame           |
++-------+-------+--------------------------+
+| [3]   | RX_EP | RX Error Parity          |
++-------+-------+--------------------------+
+| [4]   | RX_FC | RX FIFO Clear            |
++-------+-------+--------------------------+
+| [5]   | RX_FO | RX FIFO Overflow         |
++-------+-------+--------------------------+
+| [6]   | RX_FF | RX FIFO Full             |
++-------+-------+--------------------------+
+| [7]   | RX_FE | RX FIFO Empty            |
++-------+-------+--------------------------+
+| [8]   | TX_EN | TX Enable                |
++-------+-------+--------------------------+
+| [11]  | TX_EP | TX Error Parity (NAK)    |
++-------+-------+--------------------------+
+| [12]  | TX_FC | TX FIFO Clear            |
++-------+-------+--------------------------+
+| [13]  | TX_FO | TX FIFO Overflow         |
++-------+-------+--------------------------+
+| [14]  | TX_FF | TX FIFO Full             |
++-------+-------+--------------------------+
+| [15]  | TX_FE | TX FIFO Empty            |
++-------+-------+--------------------------+
+| [16]  | WT_CE | Wait Timer Clear/Expired |
++-------+-------+--------------------------+
+
+ISO7816_DATA
+^^^^^^^^^^^^
+
+`Address: 0xf0001000 + 0x4 = 0xf0001004`
+
+    TX/RX Data
+
+    .. wavedrom::
+        :caption: ISO7816_DATA
+
+        {
+            "reg": [
+                {"name": "data[7:0]", "bits": 8},
+                {"bits": 24},
+            ], "config": {"hspace": 400, "bits": 32, "lanes": 1 }, "options": {"hspace": 400, "bits": 32, "lanes": 1}
+        }
+
+
+ISO7816_MISC
+^^^^^^^^^^^^
+
+`Address: 0xf0001000 + 0x8 = 0xf0001008`
+
+    Misc Configuration
+
+    .. wavedrom::
+        :caption: ISO7816_MISC
+
+        {
+            "reg": [
+                {"name": "rx_nk",  "bits": 1},
+                {"name": "rx_fi",  "bits": 1},
+                {"name": "rx_ei",  "bits": 1},
+                {"bits": 5},
+                {"name": "tx_nk",  "bits": 1},
+                {"name": "tx_fi",  "bits": 1},
+                {"name": "tx_ei",  "bits": 1},
+                {"bits": 5},
+                {"name": "tx_rt",  "bits": 3},
+                {"bits": 1},
+                {"name": "tx_GT",  "bits": 12}
+            ], "config": {"hspace": 400, "bits": 32, "lanes": 4 }, "options": {"hspace": 400, "bits": 32, "lanes": 4}
+        }
+
+
++---------+-------+-------------------------------+
+| Field   | Name  | Description                   |
++=========+=======+===============================+
+| [0]     | RX_NK | RX NAK enable                 |
++---------+-------+-------------------------------+
+| [1]     | RX_FI | RX FIFO Interrupt enable      |
++---------+-------+-------------------------------+
+| [2]     | RX_EI | RX Exception Interrupt enable |
++---------+-------+-------------------------------+
+| [8]     | TX_NK | TX NAK enable                 |
++---------+-------+-------------------------------+
+| [9]     | TX_FI | TX FIFO Interrupt enable      |
++---------+-------+-------------------------------+
+| [10]    | TX_EI | TX Exception Interrupt enable |
++---------+-------+-------------------------------+
+| [18:16] | TX_RT | TX Retry count (N-1)          |
++---------+-------+-------------------------------+
+| [31:20] | TX_GT | TX Extra Guard Time           |
++---------+-------+-------------------------------+
+
+ISO7816_WT
+^^^^^^^^^^
+
+`Address: 0xf0001000 + 0xc = 0xf000100c`
+
+    Wait Timer
+
+    .. wavedrom::
+        :caption: ISO7816_WT
+
+        {
+            "reg": [
+                {"bits": 8},
+                {"name": "WT",  "bits": 15},
+                {"bits": 8},
+                {"name": "ie",  "bits": 1}
+            ], "config": {"hspace": 400, "bits": 32, "lanes": 4 }, "options": {"hspace": 400, "bits": 32, "lanes": 4}
+        }
+
+
++--------+------+-----------------------------+
+| Field  | Name | Description                 |
++========+======+=============================+
+| [22:8] | WT   | Wait Timer in ETU           |
++--------+------+-----------------------------+
+| [31]   | IE   | Wait Timer Interrupt Enable |
++--------+------+-----------------------------+
+
+ISO7816_BRG_RATE
+^^^^^^^^^^^^^^^^
+
+`Address: 0xf0001000 + 0x10 = 0xf0001010`
+
+    BRG Rate
+
+    .. wavedrom::
+        :caption: ISO7816_BRG_RATE
+
+        {
+            "reg": [
+                {"name": "Ds",  "bits": 15},
+                {"bits": 1},
+                {"name": "Fs",  "bits": 15},
+                {"bits": 1}
+            ], "config": {"hspace": 400, "bits": 32, "lanes": 1 }, "options": {"hspace": 400, "bits": 32, "lanes": 1}
+        }
+
+
++---------+------+-----------------------+
+| Field   | Name | Description           |
++=========+======+=======================+
+| [14:0]  | DS   | Accumulator increment |
++---------+------+-----------------------+
+| [30:16] | FS   | Accumulator refill    |
++---------+------+-----------------------+
+
+ISO7816_BRG_PHASE
+^^^^^^^^^^^^^^^^^
+
+`Address: 0xf0001000 + 0x14 = 0xf0001014`
+
+    BRG Phase
+
+    .. wavedrom::
+        :caption: ISO7816_BRG_PHASE
+
+        {
+            "reg": [
+                {"name": "Init",  "bits": 15},
+                {"bits": 17}
+            ], "config": {"hspace": 400, "bits": 32, "lanes": 1 }, "options": {"hspace": 400, "bits": 32, "lanes": 1}
+        }
+
+
++--------+------+--------------------------+
+| Field  | Name | Description              |
++========+======+==========================+
+| [14:0] | INIT | Accumulator resync value |
++--------+------+--------------------------+
+
+ISO7816_EV_STATUS
+^^^^^^^^^^^^^^^^^
+
+`Address: 0xf0001000 + 0x18 = 0xf0001018`
+
+    This register contains the current raw level of the wt_expired event trigger.
+    Writes to this register have no effect.
+
+    .. wavedrom::
+        :caption: ISO7816_EV_STATUS
+
+        {
+            "reg": [
+                {"name": "rx_ready",  "bits": 1},
+                {"name": "tx_empty",  "bits": 1},
+                {"name": "rx_error",  "bits": 1},
+                {"name": "tx_error",  "bits": 1},
+                {"name": "wt_expired",  "bits": 1},
+                {"bits": 27}
+            ], "config": {"hspace": 400, "bits": 32, "lanes": 4 }, "options": {"hspace": 400, "bits": 32, "lanes": 4}
+        }
+
+
++-------+------------+-----------------------------------+
+| Field | Name       | Description                       |
++=======+============+===================================+
+| [0]   | RX_READY   | Level of the ``rx_ready`` event   |
++-------+------------+-----------------------------------+
+| [1]   | TX_EMPTY   | Level of the ``tx_empty`` event   |
++-------+------------+-----------------------------------+
+| [2]   | RX_ERROR   | Level of the ``rx_error`` event   |
++-------+------------+-----------------------------------+
+| [3]   | TX_ERROR   | Level of the ``tx_error`` event   |
++-------+------------+-----------------------------------+
+| [4]   | WT_EXPIRED | Level of the ``wt_expired`` event |
++-------+------------+-----------------------------------+
+
+ISO7816_EV_PENDING
+^^^^^^^^^^^^^^^^^^
+
+`Address: 0xf0001000 + 0x1c = 0xf000101c`
+
+    When a  wt_expired event occurs, the corresponding bit will be set in this
+    register.  To clear the Event, set the corresponding bit in this register.
+
+    .. wavedrom::
+        :caption: ISO7816_EV_PENDING
+
+        {
+            "reg": [
+                {"name": "rx_ready",  "bits": 1},
+                {"name": "tx_empty",  "bits": 1},
+                {"name": "rx_error",  "bits": 1},
+                {"name": "tx_error",  "bits": 1},
+                {"name": "wt_expired",  "bits": 1},
+                {"bits": 27}
+            ], "config": {"hspace": 400, "bits": 32, "lanes": 4 }, "options": {"hspace": 400, "bits": 32, "lanes": 4}
+        }
+
+
++-------+------------+--------------------------------------------------------------------------------+
+| Field | Name       | Description                                                                    |
++=======+============+================================================================================+
+| [0]   | RX_READY   | `1` if a `rx_ready` event occurred. This Event is **level triggered** when the |
+|       |            | signal is **high**.                                                            |
++-------+------------+--------------------------------------------------------------------------------+
+| [1]   | TX_EMPTY   | `1` if a `tx_empty` event occurred. This Event is **level triggered** when the |
+|       |            | signal is **high**.                                                            |
++-------+------------+--------------------------------------------------------------------------------+
+| [2]   | RX_ERROR   | `1` if a `rx_error` event occurred. This Event is **level triggered** when the |
+|       |            | signal is **high**.                                                            |
++-------+------------+--------------------------------------------------------------------------------+
+| [3]   | TX_ERROR   | `1` if a `tx_error` event occurred. This Event is **level triggered** when the |
+|       |            | signal is **high**.                                                            |
++-------+------------+--------------------------------------------------------------------------------+
+| [4]   | WT_EXPIRED | `1` if a `wt_expired` event occurred. This Event is triggered on a **rising**  |
+|       |            | edge.                                                                          |
++-------+------------+--------------------------------------------------------------------------------+
+
+ISO7816_EV_ENABLE
+^^^^^^^^^^^^^^^^^
+
+`Address: 0xf0001000 + 0x20 = 0xf0001020`
+
+    This register enables the corresponding wt_expired events.  Write a ``0`` to
+    this register to disable individual events.
+
+    .. wavedrom::
+        :caption: ISO7816_EV_ENABLE
+
+        {
+            "reg": [
+                {"name": "rx_ready",  "bits": 1},
+                {"name": "tx_empty",  "bits": 1},
+                {"name": "rx_error",  "bits": 1},
+                {"name": "tx_error",  "bits": 1},
+                {"name": "wt_expired",  "bits": 1},
+                {"bits": 27}
+            ], "config": {"hspace": 400, "bits": 32, "lanes": 4 }, "options": {"hspace": 400, "bits": 32, "lanes": 4}
+        }
+
+
++-------+------------+--------------------------------------------------+
+| Field | Name       | Description                                      |
++=======+============+==================================================+
+| [0]   | RX_READY   | Write a ``1`` to enable the ``rx_ready`` Event   |
++-------+------------+--------------------------------------------------+
+| [1]   | TX_EMPTY   | Write a ``1`` to enable the ``tx_empty`` Event   |
++-------+------------+--------------------------------------------------+
+| [2]   | RX_ERROR   | Write a ``1`` to enable the ``rx_error`` Event   |
++-------+------------+--------------------------------------------------+
+| [3]   | TX_ERROR   | Write a ``1`` to enable the ``tx_error`` Event   |
++-------+------------+--------------------------------------------------+
+| [4]   | WT_EXPIRED | Write a ``1`` to enable the ``wt_expired`` Event |
++-------+------------+--------------------------------------------------+
+
