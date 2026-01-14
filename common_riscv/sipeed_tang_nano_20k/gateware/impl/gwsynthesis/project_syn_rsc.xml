@@ -1,18 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Module name="sipeed_tang_nano_20k" Register="1872" Alu="216" Lut="2739" Bsram="20" Ssram="71" T_Register="6278(1872)" T_Alu="1130(216)" T_Lut="8365(2739)" T_MULT18X18="4(0)" T_ALU54D="2(0)" T_Bsram="31(20)" T_Ssram="127(71)">
- <SubModule name="VexRiscvLitexSmpCluster_Cc1_Iw32Is4096Iy1_Dw32Ds4096Dy1_ITs4DTs4_Ldw32_Ood_Pd_Hb4_Rvc_JtagT" Register="1003" Alu="16" Lut="638" Ssram="8" T_Register="4406(1003)" T_Alu="914(16)" T_Lut="5626(638)" T_MULT18X18="4(0)" T_ALU54D="2(0)" T_Bsram="11(0)" T_Ssram="56(8)">
+<Module name="sipeed_tang_nano_20k" Register="2885" Alu="640" Lut="4228" Bsram="23" Ssram="73" T_Register="7297(2885)" T_Alu="1554(640)" T_Lut="9926(4228)" T_MULT18X18="4(0)" T_ALU54D="2(0)" T_Bsram="34(23)" T_Ssram="129(73)">
+ <SubModule name="VexRiscvLitexSmpCluster_Cc1_Iw32Is4096Iy1_Dw32Ds4096Dy1_ITs4DTs4_Ldw32_Ood_Pd_Hb4_Rvc_JtagT" Register="1009" Alu="16" Lut="675" Ssram="8" T_Register="4412(1009)" T_Alu="914(16)" T_Lut="5698(675)" T_MULT18X18="4(0)" T_ALU54D="2(0)" T_Bsram="11(0)" T_Ssram="56(8)">
   <SubModule name="bufferCC_7" Register="2" T_Register="2(2)"/>
   <SubModule name="bufferCC_8" Register="2" T_Register="2(2)"/>
-  <SubModule name="cores_0_cpu_logic_cpu" Register="2246" Alu="519" Lut="3871" MULT18X18="4" ALU54D="2" Bsram="1" Ssram="16" T_Register="2427(2246)" T_Alu="619(519)" T_Lut="4246(3871)" T_MULT18X18="4(4)" T_ALU54D="2(2)" T_Bsram="9(1)" T_Ssram="16(16)">
+  <SubModule name="cores_0_cpu_logic_cpu" Register="2246" Alu="519" Lut="3862" MULT18X18="4" ALU54D="2" Bsram="1" Ssram="16" T_Register="2427(2246)" T_Alu="619(519)" T_Lut="4241(3862)" T_MULT18X18="4(4)" T_ALU54D="2(2)" T_Bsram="9(1)" T_Ssram="16(16)">
    <SubModule name="IBusCachedPlugin_cache" Register="66" Alu="25" Lut="48" Bsram="3" T_Register="66(66)" T_Alu="25(25)" T_Lut="48(48)" T_Bsram="3(3)"/>
-   <SubModule name="dataCache_1" Register="113" Alu="75" Lut="322" Bsram="1" T_Register="113(113)" T_Alu="75(75)" T_Lut="327(322)" T_Bsram="5(1)">
-    <SubModule name="ways_0_data" Lut="5" Bsram="4" T_Lut="5(5)" T_Bsram="4(4)"/>
+   <SubModule name="dataCache_1" Register="113" Alu="75" Lut="327" Bsram="1" T_Register="113(113)" T_Alu="75(75)" T_Lut="331(327)" T_Bsram="5(1)">
+    <SubModule name="ways_0_data" Lut="4" Bsram="4" T_Lut="4(4)" T_Bsram="4(4)"/>
    </SubModule>
    <SubModule name="systemCd_logic_outputReset_buffercc" Register="2" T_Register="2(2)"/>
   </SubModule>
-  <SubModule name="privilegedDebug_logic_dm" Register="133" Lut="205" Ssram="8" T_Register="133(133)" T_Lut="205(205)" T_Ssram="8(8)"/>
-  <SubModule name="privilegedDebug_logic_withTap_tunnel" Register="50" Lut="33" T_Register="336(50)" T_Lut="147(33)" T_Ssram="2(0)">
-   <SubModule name="tunnel" Register="171" Lut="109" Ssram="2" T_Register="286(171)" T_Lut="114(109)" T_Ssram="2(2)">
+  <SubModule name="privilegedDebug_logic_dm" Register="133" Lut="210" Ssram="8" T_Register="133(133)" T_Lut="210(210)" T_Ssram="8(8)"/>
+  <SubModule name="privilegedDebug_logic_withTap_tunnel" Register="50" Lut="34" T_Register="336(50)" T_Lut="146(34)" T_Ssram="2(0)">
+   <SubModule name="tunnel" Register="171" Lut="107" Ssram="2" T_Register="286(171)" T_Lut="112(107)" T_Ssram="2(2)">
     <SubModule name="logic_jtagLogic_dmiCmd_ccToggle" Register="42" Lut="3" T_Register="44(42)" T_Lut="3(3)">
      <SubModule name="inputArea_target_buffercc" Register="2" T_Register="2(2)"/>
     </SubModule>
@@ -22,21 +22,21 @@
     </SubModule>
    </SubModule>
   </SubModule>
-  <SubModule name="clint_logic" Register="163" Alu="127" Lut="48" T_Register="163(163)" T_Alu="127(127)" T_Lut="48(48)"/>
+  <SubModule name="clint_logic" Register="163" Alu="127" Lut="81" T_Register="163(163)" T_Alu="127(127)" T_Lut="81(81)"/>
   <SubModule name="bufferCC_9" Register="2" T_Register="2(2)"/>
   <SubModule name="clintWishboneBridge_logic_bridge" Register="1" Lut="3" T_Register="1(1)" T_Lut="3(3)"/>
   <SubModule name="plicWishboneBridge_logic_bridge" Register="1" Lut="1" T_Register="1(1)" T_Lut="1(1)"/>
-  <SubModule name="iBridge_logic" Register="28" Alu="12" Lut="12" T_Register="87(28)" T_Alu="44(12)" T_Lut="72(12)" T_Bsram="1(0)" T_Ssram="2(0)">
-   <SubModule name="io_input_unburstify" Register="26" Lut="46" T_Register="26(26)" T_Lut="46(46)"/>
+  <SubModule name="iBridge_logic" Register="28" Alu="12" Lut="18" T_Register="87(28)" T_Alu="44(12)" T_Lut="74(18)" T_Bsram="1(0)" T_Ssram="2(0)">
+   <SubModule name="io_input_unburstify" Register="26" Lut="42" T_Register="26(26)" T_Lut="42(42)"/>
    <SubModule name="cmdContext_fifo" Register="20" Alu="16" Lut="8" Ssram="2" T_Register="20(20)" T_Alu="16(16)" T_Lut="8(8)" T_Ssram="2(2)"/>
    <SubModule name="io_output_rdata_fifo" T_Register="13(0)" T_Alu="16(0)" T_Lut="6(0)" T_Bsram="1(0)">
     <SubModule name="fifo" Register="13" Alu="16" Lut="6" Bsram="1" T_Register="13(13)" T_Alu="16(16)" T_Lut="6(6)" T_Bsram="1(1)"/>
    </SubModule>
   </SubModule>
   <SubModule name="dBusNonCoherent_bmb_decoder" Register="9" Alu="14" Lut="45" T_Register="9(9)" T_Alu="14(14)" T_Lut="45(45)"/>
-  <SubModule name="iArbiter_bmb_decoder" Register="9" Alu="14" Lut="42" T_Register="9(9)" T_Alu="14(14)" T_Lut="42(42)"/>
-  <SubModule name="dBridge_logic" Register="37" Alu="18" Lut="23" T_Register="113(37)" T_Alu="66(18)" T_Lut="117(23)" T_Bsram="1(0)" T_Ssram="20(0)">
-   <SubModule name="io_input_unburstify" Register="28" Lut="68" T_Register="28(28)" T_Lut="68(68)"/>
+  <SubModule name="iArbiter_bmb_decoder" Register="9" Alu="14" Lut="43" T_Register="9(9)" T_Alu="14(14)" T_Lut="43(43)"/>
+  <SubModule name="dBridge_logic" Register="37" Alu="18" Lut="24" T_Register="113(37)" T_Alu="66(18)" T_Lut="117(24)" T_Bsram="1(0)" T_Ssram="20(0)">
+   <SubModule name="io_input_unburstify" Register="28" Lut="67" T_Register="28(28)" T_Lut="67(67)"/>
    <SubModule name="streamFifoLowLatency_3" T_Register="12(0)" T_Alu="16(0)" T_Lut="9(0)" T_Ssram="18(0)">
     <SubModule name="fifo" Register="12" Alu="16" Lut="9" Ssram="18" T_Register="12(12)" T_Alu="16(16)" T_Lut="9(9)" T_Ssram="18(18)"/>
    </SubModule>

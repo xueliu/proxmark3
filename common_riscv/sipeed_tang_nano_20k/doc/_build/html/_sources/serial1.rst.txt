@@ -7,27 +7,27 @@ Register Listing for SERIAL1
 +------------------------------------------------+----------------------------------------+
 | Register                                       | Address                                |
 +================================================+========================================+
-| :ref:`SERIAL1_RXTX <SERIAL1_RXTX>`             | :ref:`0xf0002800 <SERIAL1_RXTX>`       |
+| :ref:`SERIAL1_RXTX <SERIAL1_RXTX>`             | :ref:`0xf0003800 <SERIAL1_RXTX>`       |
 +------------------------------------------------+----------------------------------------+
-| :ref:`SERIAL1_TXFULL <SERIAL1_TXFULL>`         | :ref:`0xf0002804 <SERIAL1_TXFULL>`     |
+| :ref:`SERIAL1_TXFULL <SERIAL1_TXFULL>`         | :ref:`0xf0003804 <SERIAL1_TXFULL>`     |
 +------------------------------------------------+----------------------------------------+
-| :ref:`SERIAL1_RXEMPTY <SERIAL1_RXEMPTY>`       | :ref:`0xf0002808 <SERIAL1_RXEMPTY>`    |
+| :ref:`SERIAL1_RXEMPTY <SERIAL1_RXEMPTY>`       | :ref:`0xf0003808 <SERIAL1_RXEMPTY>`    |
 +------------------------------------------------+----------------------------------------+
-| :ref:`SERIAL1_EV_STATUS <SERIAL1_EV_STATUS>`   | :ref:`0xf000280c <SERIAL1_EV_STATUS>`  |
+| :ref:`SERIAL1_EV_STATUS <SERIAL1_EV_STATUS>`   | :ref:`0xf000380c <SERIAL1_EV_STATUS>`  |
 +------------------------------------------------+----------------------------------------+
-| :ref:`SERIAL1_EV_PENDING <SERIAL1_EV_PENDING>` | :ref:`0xf0002810 <SERIAL1_EV_PENDING>` |
+| :ref:`SERIAL1_EV_PENDING <SERIAL1_EV_PENDING>` | :ref:`0xf0003810 <SERIAL1_EV_PENDING>` |
 +------------------------------------------------+----------------------------------------+
-| :ref:`SERIAL1_EV_ENABLE <SERIAL1_EV_ENABLE>`   | :ref:`0xf0002814 <SERIAL1_EV_ENABLE>`  |
+| :ref:`SERIAL1_EV_ENABLE <SERIAL1_EV_ENABLE>`   | :ref:`0xf0003814 <SERIAL1_EV_ENABLE>`  |
 +------------------------------------------------+----------------------------------------+
-| :ref:`SERIAL1_TXEMPTY <SERIAL1_TXEMPTY>`       | :ref:`0xf0002818 <SERIAL1_TXEMPTY>`    |
+| :ref:`SERIAL1_TXEMPTY <SERIAL1_TXEMPTY>`       | :ref:`0xf0003818 <SERIAL1_TXEMPTY>`    |
 +------------------------------------------------+----------------------------------------+
-| :ref:`SERIAL1_RXFULL <SERIAL1_RXFULL>`         | :ref:`0xf000281c <SERIAL1_RXFULL>`     |
+| :ref:`SERIAL1_RXFULL <SERIAL1_RXFULL>`         | :ref:`0xf000381c <SERIAL1_RXFULL>`     |
 +------------------------------------------------+----------------------------------------+
 
 SERIAL1_RXTX
 ^^^^^^^^^^^^
 
-`Address: 0xf0002800 + 0x0 = 0xf0002800`
+`Address: 0xf0003800 + 0x0 = 0xf0003800`
 
 
     .. wavedrom::
@@ -44,7 +44,7 @@ SERIAL1_RXTX
 SERIAL1_TXFULL
 ^^^^^^^^^^^^^^
 
-`Address: 0xf0002800 + 0x4 = 0xf0002804`
+`Address: 0xf0003800 + 0x4 = 0xf0003804`
 
     TX FIFO Full.
 
@@ -62,7 +62,7 @@ SERIAL1_TXFULL
 SERIAL1_RXEMPTY
 ^^^^^^^^^^^^^^^
 
-`Address: 0xf0002800 + 0x8 = 0xf0002808`
+`Address: 0xf0003800 + 0x8 = 0xf0003808`
 
     RX FIFO Empty.
 
@@ -80,7 +80,7 @@ SERIAL1_RXEMPTY
 SERIAL1_EV_STATUS
 ^^^^^^^^^^^^^^^^^
 
-`Address: 0xf0002800 + 0xc = 0xf000280c`
+`Address: 0xf0003800 + 0xc = 0xf000380c`
 
     This register contains the current raw level of the rx event trigger.  Writes to
     this register have no effect.
@@ -108,7 +108,7 @@ SERIAL1_EV_STATUS
 SERIAL1_EV_PENDING
 ^^^^^^^^^^^^^^^^^^
 
-`Address: 0xf0002800 + 0x10 = 0xf0002810`
+`Address: 0xf0003800 + 0x10 = 0xf0003810`
 
     When a  rx event occurs, the corresponding bit will be set in this register.  To
     clear the Event, set the corresponding bit in this register.
@@ -125,18 +125,20 @@ SERIAL1_EV_PENDING
         }
 
 
-+-------+------+------------------------------------------------------------------------------+
-| Field | Name | Description                                                                  |
-+=======+======+==============================================================================+
-| [0]   | TX   | `1` if a `tx` event occurred. This Event is triggered on a **falling** edge. |
-+-------+------+------------------------------------------------------------------------------+
-| [1]   | RX   | `1` if a `rx` event occurred. This Event is triggered on a **falling** edge. |
-+-------+------+------------------------------------------------------------------------------+
++-------+------+---------------------------------------------------------------------------------+
+| Field | Name | Description                                                                     |
++=======+======+=================================================================================+
+| [0]   | TX   | `1` if a `tx` event occurred. This Event is **level triggered** when the signal |
+|       |      | is **high**.                                                                    |
++-------+------+---------------------------------------------------------------------------------+
+| [1]   | RX   | `1` if a `rx` event occurred. This Event is **level triggered** when the signal |
+|       |      | is **high**.                                                                    |
++-------+------+---------------------------------------------------------------------------------+
 
 SERIAL1_EV_ENABLE
 ^^^^^^^^^^^^^^^^^
 
-`Address: 0xf0002800 + 0x14 = 0xf0002814`
+`Address: 0xf0003800 + 0x14 = 0xf0003814`
 
     This register enables the corresponding rx events.  Write a ``0`` to this
     register to disable individual events.
@@ -164,7 +166,7 @@ SERIAL1_EV_ENABLE
 SERIAL1_TXEMPTY
 ^^^^^^^^^^^^^^^
 
-`Address: 0xf0002800 + 0x18 = 0xf0002818`
+`Address: 0xf0003800 + 0x18 = 0xf0003818`
 
     TX FIFO Empty.
 
@@ -182,7 +184,7 @@ SERIAL1_TXEMPTY
 SERIAL1_RXFULL
 ^^^^^^^^^^^^^^
 
-`Address: 0xf0002800 + 0x1c = 0xf000281c`
+`Address: 0xf0003800 + 0x1c = 0xf000381c`
 
     RX FIFO Full.
 
