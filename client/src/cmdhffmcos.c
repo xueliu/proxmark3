@@ -1,3 +1,22 @@
+//-----------------------------------------------------------------------------
+// Copyright (C) Proxmark3 contributors. See AUTHORS.md for details.
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// See LICENSE.txt for the text of the license.
+//-----------------------------------------------------------------------------
+// High frequency FMCOS (FM1208/FM1280) command handlers
+// CLI interface for FMCOS smart card operations
+//-----------------------------------------------------------------------------
+
 #include "proxmark3.h"
 #include "pm3_cmd.h"
 #include "cmdhffmcos.h"
@@ -9,7 +28,15 @@
 #include <string.h>
 #include <stdlib.h>
 
-// Common helper to handle verbose flag
+//-----------------------------------------------------------------------------
+// Helper Functions
+//-----------------------------------------------------------------------------
+
+/**
+ * @brief Set verbose mode based on CLI argument.
+ * @param ctx  CLI parser context.
+ * @param idx  Argument index for verbose flag.
+ */
 static void handle_verbose(CLIParserContext *ctx, int idx) {
     if (arg_get_lit(ctx, idx)) {
         fmcos_set_verbose(true);
@@ -18,11 +45,13 @@ static void handle_verbose(CLIParserContext *ctx, int idx) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Commands
-// ---------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+// Command Handlers
+//-----------------------------------------------------------------------------
 
-// hf fmcos select -f <fid> [-v]
+/**
+ * @brief hf fmcos select - Select file by FID.
+ */
 static int CmdHFFMCOSSelect(const char *Cmd) {
     CLIParserContext *ctx;
     void *argtable[] = {
