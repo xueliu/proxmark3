@@ -189,11 +189,34 @@ int fmcos_send_apdu(uint8_t cla, uint8_t ins, uint8_t p1, uint8_t p2,
 // File Operations
 // ---------------------------------------------------------------------------
 
+/**
+ * @brief Select a file by its File Identifier (FID).
+ * 
+ * Sends SELECT command (INS=A4, P1=00, P2=00) with 2-byte FID.
+ * FCI (File Control Information) is returned if available.
+ * 
+ * @param fid      File Identifier (2 bytes, e.g., 0x3F00 for MF)
+ * @param resp     Buffer for FCI response data
+ * @param resplen  In: buffer size, Out: actual FCI length
+ * @param sw1, sw2 Output status words
+ * @return PM3_SUCCESS on success
+ */
 int fmcos_select_file(uint16_t fid, uint8_t *resp, uint16_t *resplen, uint8_t *sw1, uint8_t *sw2) {
     uint8_t data[2] = {fid >> 8, fid & 0xFF};
     return fmcos_send_apdu(FMCOS_CLA_ISO, FMCOS_INS_SELECT, 0x00, 0x00, data, 2, 0x00, resp, resplen, sw1, sw2);
 }
 
+/**
+ * @brief Select files by path (multiple FIDs).
+ * 
+ * Iteratively selects each FID in the path. Useful for navigating
+ * through DF hierarchy (e.g., 3F00 -> 3F01 -> 0005).
+ * 
+ * @param path  Array of FID bytes (each FID is 2 bytes)
+ * @param len   Length of path in bytes (must be even)
+ * @param sw1, sw2 Output status words of last SELECT
+ * @return PM3_SUCCESS if all SELECTs succeed
+ */
 int fmcos_select_path(const uint8_t *path, uint8_t len, uint8_t *sw1, uint8_t *sw2) {
     if (len % 2 != 0) return PM3_ESOFT; // FID is 2 bytes
     uint8_t s1, s2;
@@ -208,10 +231,30 @@ int fmcos_select_path(const uint8_t *path, uint8_t len, uint8_t *sw1, uint8_t *s
     return PM3_SUCCESS;
 }
 
+/**
+ * @brief Select DF by Application Identifier (AID/DF name).
+ * 
+ * Sends SELECT command with P1=04 (select by DF name).
+ * 
+ * @param aid  Application Identifier (DF name)
+ * @param len  Length of AID
+ * @param sw1, sw2 Output status words
+ * @return PM3_SUCCESS on success
+ */
 int fmcos_select_df(const uint8_t *aid, uint8_t len, uint8_t *sw1, uint8_t *sw2) {
     return fmcos_send_apdu(FMCOS_CLA_ISO, FMCOS_INS_SELECT, 0x04, 0x00, aid, len, 0x00, NULL, NULL, sw1, sw2);
 }
 
+/**
+ * @brief Read binary data from current or SFI-addressed EF.
+ * 
+ * @param offset   Byte offset to start reading from
+ * @param len      Number of bytes to read
+ * @param sfi      Short File Identifier (0 = use currently selected EF)
+ * @param out_data Buffer for read data
+ * @param sw1, sw2 Output status words
+ * @return PM3_SUCCESS on success
+ */
 int fmcos_read_binary(uint16_t offset, uint8_t len, uint8_t sfi, uint8_t *out_data, uint8_t *sw1, uint8_t *sw2) {
     uint8_t p1, p2;
     if (sfi) {
@@ -225,6 +268,16 @@ int fmcos_read_binary(uint16_t offset, uint8_t len, uint8_t sfi, uint8_t *out_da
     return fmcos_send_apdu(FMCOS_CLA_ISO, FMCOS_INS_READ_BINARY, p1, p2, NULL, 0, len, out_data, &rlen, sw1, sw2);
 }
 
+/**
+ * @brief Update (write) binary data to current or SFI-addressed EF.
+ * 
+ * @param offset   Byte offset to start writing at
+ * @param data     Data to write
+ * @param len      Number of bytes to write
+ * @param sfi      Short File Identifier (0 = use currently selected EF)
+ * @param sw1, sw2 Output status words
+ * @return PM3_SUCCESS on success
+ */
 int fmcos_update_binary(uint16_t offset, const uint8_t *data, uint8_t len, uint8_t sfi, uint8_t *sw1, uint8_t *sw2) {
     uint8_t p1, p2;
     if (sfi) {
@@ -237,6 +290,51 @@ int fmcos_update_binary(uint16_t offset, const uint8_t *data, uint8_t len, uint8
     return fmcos_send_apdu(FMCOS_CLA_ISO, FMCOS_INS_UPDATE_BINARY, p1, p2, data, len, 0, NULL, NULL, sw1, sw2);
 }
 
+/**
+ * @brief Read record from selected record EF.
+ * @param rec_num  Record number (1-based)
+ * @param sfi      Short File Identifier (0 = current EF)
+ * @param out_data Buffer for record data
+ * @param out_len  In: buffer size, Out: actual record length
+ * @param sw1, sw2 Output status words
+ */
+int fmcos_read_record(uint8_t rec_num, uint8_t sfi, uint8_t *out_data, uint16_t *out_len, uint8_t *sw1, uint8_t *sw2) {
+    uint8_t p2;
+    if (sfi) {
+        p2 = (sfi << 3) | 0x04;  // SFI in high 5 bits, P2=04 means record number
+    } else {
+        p2 = 0x04;  // Current EF, record number in P1
+    }
+    return fmcos_send_apdu(FMCOS_CLA_ISO, FMCOS_INS_READ_RECORD, rec_num, p2, NULL, 0, 0x00, out_data, out_len, sw1, sw2);
+}
+
+/**
+ * @brief Get balance from e-purse/wallet file.
+ * @param app_type  Application type (usually 0x02 for PBOC)
+ * @param balance   Output balance value
+ * @param sw1, sw2  Output status words
+ */
+int fmcos_get_balance(uint8_t app_type, uint32_t *balance, uint8_t *sw1, uint8_t *sw2) {
+    uint8_t resp[8];
+    uint16_t rlen = sizeof(resp);
+    int ret = fmcos_send_apdu(FMCOS_CLA_PBOC, FMCOS_INS_GET_BALANCE, 0x00, app_type, NULL, 0, 0x04, resp, &rlen, sw1, sw2);
+    if (ret == PM3_SUCCESS && *sw1 == 0x90 && *sw2 == 0x00 && rlen >= 4) {
+        // Balance is 4 bytes, big-endian
+        *balance = (resp[0] << 24) | (resp[1] << 16) | (resp[2] << 8) | resp[3];
+    }
+    return ret;
+}
+
+/**
+ * @brief Get random challenge from card.
+ * 
+ * Used for challenge-response authentication. Card generates
+ * random bytes that must be encrypted with the correct key.
+ * 
+ * @param len       Number of random bytes requested (typically 8)
+ * @param challenge Buffer for random bytes
+ * @return PM3_SUCCESS on success
+ */
 int fmcos_get_challenge(uint8_t len, uint8_t *challenge) {
     uint16_t rlen = len;
     uint8_t sw1, sw2;
@@ -248,6 +346,17 @@ int fmcos_get_challenge(uint8_t len, uint8_t *challenge) {
 
 #include "mbedtls/des.h"
 
+/**
+ * @brief Perform external authentication with DES/3DES key.
+ * 
+ * Gets a challenge from card, encrypts it with the provided key,
+ * and sends the cryptogram for verification.
+ * 
+ * @param kid       Key ID (key slot in key file)
+ * @param key_bytes DES key (8 bytes) or 3DES key (16 bytes)
+ * @param key_len   Key length (8 or 16)
+ * @return PM3_SUCCESS on successful authentication
+ */
 int fmcos_ext_auth(uint8_t kid, const uint8_t *key_bytes, uint8_t key_len) {
     if (!key_bytes) return PM3_EINVARG;
     
@@ -281,14 +390,31 @@ int fmcos_ext_auth(uint8_t kid, const uint8_t *key_bytes, uint8_t key_len) {
     return fmcos_send_apdu(FMCOS_CLA_ISO, FMCOS_INS_EXT_AUTH, kid, 0x00, cryptogram, 8, 0, NULL, NULL, &sw1, &sw2);
 }
 
+/**
+ * @brief Verify PIN/password.
+ * 
+ * @param kid  Key ID (PIN slot in key file)
+ * @param pin  PIN data (binary or ASCII)
+ * @param len  PIN length in bytes
+ * @return PM3_SUCCESS on success
+ */
 int fmcos_verify_pin(uint8_t kid, const uint8_t *pin, uint8_t len) {
     uint8_t sw1, sw2;
     // CLA=00, INS=20, P1=00, P2=kid
     return fmcos_send_apdu(FMCOS_CLA_ISO, FMCOS_INS_VERIFY, 0x00, kid, pin, len, 0, NULL, NULL, &sw1, &sw2);
 }
 
-// Create DF (Directory File)
-// Data: Type(0x38) + Space(1) + Reserved(00) + Perm(5) + DFName(n)
+/**
+ * @brief Create Dedicated File (DF/directory).
+ * 
+ * @param fid      File Identifier for new DF
+ * @param space    Space allocation code
+ * @param df_name  DF name/AID (optional, can be NULL)
+ * @param name_len Length of DF name
+ * @param perm     Permission bytes (5 bytes, NULL for default)
+ * @param sw1, sw2 Output status words
+ * @return PM3_SUCCESS on success
+ */
 int fmcos_create_df(uint16_t fid, uint8_t space, const uint8_t *df_name, uint8_t name_len,
                     const uint8_t *perm, uint8_t *sw1, uint8_t *sw2) {
     uint8_t data[32];
@@ -313,8 +439,14 @@ int fmcos_create_df(uint16_t fid, uint8_t space, const uint8_t *df_name, uint8_t
     return fmcos_send_apdu(FMCOS_CLA_PBOC, FMCOS_INS_CREATE_FILE, p1, p2, data, data_len, 0, NULL, NULL, sw1, sw2);
 }
 
-// Create Key File
-// Data: Type(0x3F) + Slots(1) + Prop(5)
+/**
+ * @brief Create Key File for storing keys and PINs.
+ * 
+ * @param slots  Number of key slots (each slot ~24 bytes)
+ * @param prop   Property bytes (5 bytes, NULL for default)
+ * @param sw1, sw2 Output status words
+ * @return PM3_SUCCESS on success
+ */
 int fmcos_create_key_file(uint8_t slots, const uint8_t *prop, uint8_t *sw1, uint8_t *sw2) {
     uint8_t data[16];
     uint8_t data_len = 0;
@@ -331,8 +463,15 @@ int fmcos_create_key_file(uint8_t slots, const uint8_t *prop, uint8_t *sw1, uint
     return fmcos_send_apdu(FMCOS_CLA_PBOC, FMCOS_INS_CREATE_FILE, 0x00, 0x00, data, data_len, 0, NULL, NULL, sw1, sw2);
 }
 
-// Create Binary EF
-// Data: Type(0x28) + Size(2) + Perm(5)
+/**
+ * @brief Create Binary Elementary File.
+ * 
+ * @param fid   File Identifier
+ * @param size  File size in bytes
+ * @param perm  Permission bytes (5 bytes, NULL for default 0xFF)
+ * @param sw1, sw2 Output status words
+ * @return PM3_SUCCESS on success
+ */
 int fmcos_create_binary_ef(uint16_t fid, uint16_t size, const uint8_t *perm, uint8_t *sw1, uint8_t *sw2) {
     uint8_t data[16];
     uint8_t data_len = 0;
@@ -352,8 +491,18 @@ int fmcos_create_binary_ef(uint16_t fid, uint16_t size, const uint8_t *perm, uin
     return fmcos_send_apdu(FMCOS_CLA_PBOC, FMCOS_INS_CREATE_FILE, p1, p2, data, data_len, 0, NULL, NULL, sw1, sw2);
 }
 
-// Create Record EF (fixed, variable, or cyclic)
-// Data: Type + SFI + Count + Len + Perm(5)
+/**
+ * @brief Create Record-based Elementary File.
+ * 
+ * @param fid       File Identifier
+ * @param rec_type  Record type (FMCOS_FILE_FIXED_REC/VAR_REC/CYCLIC_REC)
+ * @param sfi       Short File Identifier
+ * @param count     Number of records
+ * @param len       Record length in bytes
+ * @param perm      Permission bytes (5 bytes, NULL for default)
+ * @param sw1, sw2  Output status words
+ * @return PM3_SUCCESS on success
+ */
 int fmcos_create_record_ef(uint16_t fid, uint8_t rec_type, uint8_t sfi, uint8_t count, uint8_t len,
                            const uint8_t *perm, uint8_t *sw1, uint8_t *sw2) {
     uint8_t data[16];
@@ -375,13 +524,19 @@ int fmcos_create_record_ef(uint16_t fid, uint8_t rec_type, uint8_t sfi, uint8_t 
     return fmcos_send_apdu(FMCOS_CLA_PBOC, FMCOS_INS_CREATE_FILE, p1, p2, data, data_len, 0, NULL, NULL, sw1, sw2);
 }
 
-// Drop field helper
+/**
+ * @brief Drop RF field and reset session state.
+ */
 void fmcos_drop_field(void) {
     DropField();
     g_fmcos_field_on = false;
 }
 
-// Info command using new helpers
+/**
+ * @brief Get card info by selecting MF and displaying FCI.
+ * 
+ * @return PM3_SUCCESS on success
+ */
 int fmcos_info(void) {
     uint8_t sw1, sw2;
     PrintAndLogEx(INFO, "Selecting MF (3F00)...");
