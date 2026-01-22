@@ -83,7 +83,7 @@ static int CmdHFFMCOSSelect(const char *Cmd) {
         PrintAndLogEx(INFO, "Select SW: %02X%02X (%s)", sw1, sw2, fmcos_get_sw_desc(sw1, sw2));
     }
 
-    fmcos_drop_field();
+    // Note: Do NOT drop field here - keep session active for subsequent commands
     CLIParserFree(ctx);
     return ret;
 }
@@ -696,11 +696,34 @@ static int CmdHFFMCOSExplore(const char *Cmd) {
     return PM3_SUCCESS;
 }
 
+/**
+ * @brief hf fmcos off - Drop RF field and terminate session.
+ */
+static int CmdHFFMCOSOff(const char *Cmd) {
+    CLIParserContext *ctx;
+    void *argtable[] = {
+        arg_param_begin,
+        arg_param_end
+    };
+
+    CLIParserInit(&ctx, "hf fmcos off",
+        "Drop RF field and terminate session",
+        "hf fmcos off");
+    CLIExecWithReturn(ctx, Cmd, argtable, true);
+    (void)argtable;
+    CLIParserFree(ctx);
+
+    fmcos_drop_field();
+    PrintAndLogEx(SUCCESS, "RF field dropped, session terminated");
+    return PM3_SUCCESS;
+}
+
 static int CmdHelp(const char *Cmd);
 
 static command_t CommandTable[] = {
     {"help", CmdHelp, AlwaysAvailable, "This help"},
     {"info", CmdHFFMCOSInfo, AlwaysAvailable, "Get card info"},
+    {"off", CmdHFFMCOSOff, AlwaysAvailable, "Drop RF field / terminate session"},
     {"select", CmdHFFMCOSSelect, AlwaysAvailable, "Select file"},
     {"read", CmdHFFMCOSRead, AlwaysAvailable, "Read binary"},
     {"update", CmdHFFMCOSUpdate, AlwaysAvailable, "Update binary"},
