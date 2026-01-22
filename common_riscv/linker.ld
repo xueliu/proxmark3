@@ -17,6 +17,7 @@ SECTIONS
 		KEEP(*(.text.isr))
 
 		*(.text .stub .text.* .gnu.linkonce.t.*)
+		*(.startos)
 		_etext = .;
 	} > main_ram
 
@@ -60,7 +61,16 @@ SECTIONS
 	} > main_ram
 }
 
-PROVIDE(_fstack = ORIGIN(main_ram) + LENGTH(main_ram));
+commonareasize = 0x20;
+PROVIDE(_fstack = ORIGIN(main_ram) + LENGTH(main_ram) - commonareasize);
+
+SECTIONS
+{
+	.commonarea (_fstack) (NOLOAD) :
+	{
+		*(.commonarea)
+	}
+}
 
 /* PM3 firmware expects these symbols for copying data from ROM to RAM, 
    but we are running entirely in RAM (loaded by debugger/serial), 

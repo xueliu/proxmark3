@@ -138,6 +138,11 @@ ifeq ($(NOERROR),1)
   DEFCFLAGS += -Wno-error
 endif
 
+
+ifdef DEBUG
+  DEFCFLAGS += -g -O0
+endif
+
 CROSS_CFLAGS ?= $(DEFCFLAGS)
 # TODO: check 
 #CROSS_CFLAGS += $(ARMCFLAGS) -c $(INCLUDE) -std=c99 -DON_DEVICE $(APP_CFLAGS)

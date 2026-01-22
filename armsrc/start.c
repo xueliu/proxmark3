@@ -57,8 +57,13 @@ static void uncompress_data_section(void) {
 }
 #endif
 
+#include <generated/csr.h>
+
 void __attribute__((section(".startos"))) Vector(void);
 void Vector(void) {
+    /* Turn off all LEDs on startup to indicate we reached this point */
+    leds_out_write(1);
+
     /* Stack should have been set up by the bootloader */
 
     if (g_common_area.magic != COMMON_AREA_MAGIC || g_common_area.version != 1) {
