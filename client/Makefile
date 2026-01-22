@@ -638,6 +638,7 @@ SRCS =  mifare/aiddesfire.c \
 		cmdhffelica.c \
 		cmdhffido.c \
 		cmdhffudan.c \
+		cmdhffmcos.c \
 		cmdhfgallagher.c \
 		cmdhfksx6924.c \
 		cmdhfcipurse.c \
@@ -746,6 +747,7 @@ SRCS =  mifare/aiddesfire.c \
 		graph.c \
 		hidsio.c \
 		jansson_path.c \
+		fmcos/fmcos.c \
 		iso4217.c \
 		iso7816/apduinfo.c \
 		iso7816/iso7816core.c \

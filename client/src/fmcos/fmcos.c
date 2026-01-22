@@ -1,3 +1,22 @@
+//-----------------------------------------------------------------------------
+// Copyright (C) Proxmark3 contributors. See AUTHORS.md for details.
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// See LICENSE.txt for the text of the license.
+//-----------------------------------------------------------------------------
+// High frequency FMCOS (FM1208/FM1280) core functions
+// Provides APDU exchange, file operations, and authentication
+//-----------------------------------------------------------------------------
+
 #include "fmcos.h"
 #include "cmdtrace.h"
 #include "comms.h"
@@ -8,7 +27,16 @@
 #include <string.h>
 #include <stdio.h>
 
-// Helper
+//-----------------------------------------------------------------------------
+// Module State
+//-----------------------------------------------------------------------------
+static bool g_fmcos_verbose = false;  // Verbose logging flag
+static bool g_fmcos_field_on = false; // RF field state tracking
+
+//-----------------------------------------------------------------------------
+// Status Word Description
+// Returns human-readable description for ISO 7816-4 status words
+//-----------------------------------------------------------------------------
 const char* fmcos_get_sw_desc(uint8_t sw1, uint8_t sw2) {
     uint16_t sw = (sw1 << 8) | sw2;
     switch (sw) {
@@ -43,17 +71,42 @@ const char* fmcos_get_sw_desc(uint8_t sw1, uint8_t sw2) {
     }
 }
 
-static bool g_fmcos_verbose = false;
-static bool g_fmcos_field_on = false;
-
+/**
+ * @brief Enable or disable verbose APDU logging.
+ * @param verbose true to enable, false to disable.
+ */
 void fmcos_set_verbose(bool verbose) {
     g_fmcos_verbose = verbose;
 }
 
+//-----------------------------------------------------------------------------
+// Core APDU Exchange
+//-----------------------------------------------------------------------------
+
+/**
+ * @brief Send an APDU command to the card and receive response.
+ * 
+ * Uses ExchangeAPDU14a for flexible field management. Automatically
+ * activates the field on the first command.
+ * 
+ * @param cla       Class byte (e.g., 0x00 for standard ISO)
+ * @param ins       Instruction byte
+ * @param p1        Parameter 1
+ * @param p2        Parameter 2
+ * @param data      Command data (NULL if none)
+ * @param len       Length of command data
+ * @param le        Expected response length (0 if none)
+ * @param resp      Buffer for response data (excluding SW)
+ * @param resplen   In: buffer size, Out: actual response length
+ * @param sw1       Output: Status word byte 1
+ * @param sw2       Output: Status word byte 2
+ * @return PM3_SUCCESS on success, error code otherwise.
+ */
 int fmcos_send_apdu(uint8_t cla, uint8_t ins, uint8_t p1, uint8_t p2,
                     const uint8_t *data, uint16_t len, uint8_t le,
                     uint8_t *resp, uint16_t *resplen, uint8_t *sw1, uint8_t *sw2) {
     
+    // Build APDU: [CLA INS P1 P2] [Lc Data...] [Le]
     uint8_t apdu[512];
     uint16_t apdu_len = 0;
     

@@ -38,6 +38,7 @@
 #include "cmdhfjooki.h"     // MFU based Jooki
 #include "cmdhfksx6924.h"   // KS X 6924
 #include "cmdhflegic.h"     // LEGIC
+#include "cmdhffmcos.h"     // FMCOS
 #include "cmdhflto.h"       // LTO-CM
 #include "cmdhfmf.h"        // CLASSIC
 #include "cmdhfmfu.h"       // ULTRALIGHT/NTAG etc
@@ -589,6 +590,7 @@ static command_t CommandTable[] = {
     {"jooki",       CmdHF_Jooki,      AlwaysAvailable, "{ Jooki RFIDs...                      }"},
     {"ksx6924",     CmdHFKSX6924,     AlwaysAvailable, "{ KS X 6924 (T-Money, Snapper+) RFIDs }"},
     {"legic",       CmdHFLegic,       AlwaysAvailable, "{ LEGIC RFIDs...                      }"},
+    {"fmcos",       CmdHFFMCOS,       AlwaysAvailable, "{ FMCOS RFIDs...                      }"},
     {"lto",         CmdHFLTO,         AlwaysAvailable, "{ LTO Cartridge Memory RFIDs...       }"},
     {"mf",          CmdHFMF,          AlwaysAvailable, "{ MIFARE RFIDs...                     }"},
     {"mfp",         CmdHFMFP,         AlwaysAvailable, "{ MIFARE Plus RFIDs...                }"},
