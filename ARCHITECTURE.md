@@ -11,7 +11,11 @@ To build the firmware for the **PM4 (RISC-V)** platform:
 make fullimage V=1
 
 # 2. Parallel build with clean (Verified working)
+# 2. Parallel build with clean (Verified working)
 make clean && make -j fullimage
+
+# 3. Debug Build (Enables -g -O0 and generated symbols)
+make clean && make fullimage DEBUG=1
 ```
 *Note*: The `bootrom` and `recovery` targets are automatically skipped for this platform.
 
@@ -63,6 +67,7 @@ make clean && make -j fullimage
     3.  Clearing the BSS section to zero (RAM contents are undefined).
 *   **Inline Assembly**: GCC's handling of `asm` vs `__asm__` keywords differs by strictness levels (e.g., `-std=c99`). **Solution**: Use `__asm__` for portability in headers and C files.
 *   **Implicit Function Declarations**: Missing prototypes for functions (like `usb_read_ng`) can lead to link-time errors even if the compile phase passes. This is critical when replacing drivers—ensure *all* public API functions of the replaced driver are stubbed or implemented.
+*   **Debug Symbols**: The final `armsrc/obj/fullimage.elf` is explicitly stripped of symbols to reduce size. When debugging, you **MUST** load symbols from the intermediate `armsrc/obj/fullimage.stage1.elf` file.
 
 ### 2.3 Dependency Management
 *   **Header Hell**: Porting across architectures often reveals "hidden" dependencies on system headers. The LiteX `csr.h` depended on types and macros usually found in a `system.h` or `hw/common.h` which weren't in the standard include path. **Solution**: Mocking or adapting these "bridge" headers is a quick way to unblock compilation.
@@ -150,7 +155,8 @@ The goal is to catch the CPU exactly when it jumps to `0x40000000` after the BIO
     ```bash
     riscv64-unknown-elf-gdb -x tools/pm4_debug.gdb
     ```
-    *GDB will connect, set a **Hardware Breakpoint** at `0x40000000`, and wait (`continue`).*
+    *Note*: The script loads symbols from `armsrc/obj/fullimage.stage1.elf` (which contains debug info), NOT the stripped `fullimage.elf`.
+    *GDB will connect, set a **Hardware Breakpoint** at `0x40000000` (and `Vector`), and wait (`continue`).*
 
 3.  **Load Firmware (Serial Boot)**:
     In a separate terminal, send the firmware to the BIOS:
@@ -163,3 +169,36 @@ The goal is to catch the CPU exactly when it jumps to `0x40000000` after the BIO
     *   `list` : See source code at entry.
     *   `si` : Step instruction.
     *   `c` : Continue.
+
+## 8. Bootrom Analysis (ARM Legacy)
+
+The user requested an analysis of the original `bootrom` (AT91SAM7S) to fully understand what functionality might be missing or useful for the PM4 port.
+
+### 8.1 Core Functionality
+The ARM `bootrom` serves as a **Stage 1 Bootloader** and **Emergency Flasher**. Its lifecycle is:
+1.  **Hardware Init**: Configures Clocks (PLL), GPIOs (LEDs, FPGA pins), and Watchdog. (*Porting Note: LiteX BIOS/Gateware handles most of this.*)
+2.  **Decision Logic**: Decides whether to boot the Main Firmware (`osimage`) or enter Recovery Mode.
+    *   **Checks**: Button press, `g_common_area` flags, or invalid OS image.
+3.  **App Launch**: Jumps to the OS image entry point.
+4.  **Recovery Loop**: If Recovery Mode is entered:
+    *   Initializes USB CDC.
+    *   Waits for commands from the client (Via `UsbPacketReceived`).
+    *   Supports Flash Writing/Reading.
+
+### 8.2 Key Functions & Porting Candidates
+
+| Function / Logic | Description | Relevance to PM4 (RISC-V) |
+| :--- | :--- | :--- |
+| **`ConfigClocks`** | Sets up AT91 PMC (48MHz). | **No**. FPGA clocks are fixed by bitstream. |
+| **`BootROM` (Entry)** | Clears BSS, Init IO, checks `g_common_area`. | **Partial**. `g_common_area` logic is useful for retaining state across soft-resets. |
+| **`flash_mode`** | Main loop for the flasher. Polls USB. | **Yes**. A "Recovery Firmware" is needed to support updating via the standard client. |
+| **`CMD_FINISH_WRITE`** | Writes data to internal Flush (EFC). | **Adapt**. Must be rewritten to write to **SPI Flash** (`spiflash` region) instead of AT91 EFC. |
+| **`CMD_DEVICE_INFO`** | Reports capabilities to client. | **Yes**. Necessary for client handshake. |
+| **`CMD_READ_MEM`** | Dumps memory/flash. | **Yes**. Useful for debugging/verification. |
+
+### 8.3 Porting Strategy
+*   **Immediate Term**: Discard `bootrom`. Use `litex_term` or JTAG to load `fullimage.bin` directly to RAM.
+*   **Long Term (Recovery)**:
+    *   Create a standalone "Recovery App" (small footprint) linked at a specific address (e.g., in SPI Flash).
+    *   Implement the `CMD_*` protocol but map `FINISH_WRITE` to LiteX SPI Flash drivers.
+    *   Retain `g_common_area` handshake to allow the main app to "Reboot to Recovery".
