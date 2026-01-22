@@ -681,6 +681,33 @@ static int CmdHFFMCOSExplore(const char *Cmd) {
                 }
             }
 
+            // Fallback probing if type is still Unknown (no FCI or unrecognized type)
+            if (strcmp(type_str, "Unknown") == 0) {
+                uint8_t probe_data[4];
+                uint8_t probe_sw1, probe_sw2;
+                
+                // Try READ BINARY (offset 0, length 1)
+                int probe_ret = fmcos_read_binary(0, 1, 0, probe_data, &probe_sw1, &probe_sw2);
+                if (probe_ret == PM3_SUCCESS && probe_sw1 == 0x90 && probe_sw2 == 0x00) {
+                    type_str = "Binary EF (probe)";
+                } else if (probe_sw1 == 0x69 && probe_sw2 == 0x86) {
+                    // 6986 = Command not allowed (no current EF selected) = likely DF
+                    type_str = "DF (probe)";
+                } else {
+                    // Try READ RECORD (record 1)
+                    // Note: We don't have fmcos_read_record implemented yet
+                    // For now just mark as EF if READ BINARY failed with security error
+                    if (probe_sw1 == 0x69 && probe_sw2 == 0x82) {
+                        // 6982 = Security status not satisfied = likely protected EF
+                        type_str = "EF (protected)";
+                    }
+                }
+                
+                // Re-select the file after probe (probe might have changed state)
+                resplen = sizeof(resp);
+                fmcos_select_file((uint16_t)fid, resp, &resplen, &sw1, &sw2);
+            }
+
             PrintAndLogEx(SUCCESS, "%04X   %-18s %-6s %-30s", fid, type_str, size_str, info_str);
 
             // Return to base DF for next iteration
