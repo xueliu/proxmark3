@@ -112,7 +112,9 @@ int fmcos_select_file(uint16_t fid, uint8_t *resp, uint16_t *resplen, uint8_t *s
 int fmcos_select_path(const uint8_t *path, uint8_t len, uint8_t *sw1, uint8_t *sw2);
 int fmcos_select_df(const uint8_t *aid, uint8_t len, uint8_t *sw1, uint8_t *sw2);
 int fmcos_read_binary(uint16_t offset, uint8_t len, uint8_t sfi, uint8_t *out_data, uint8_t *sw1, uint8_t *sw2);
+int fmcos_read_record(uint8_t rec_num, uint8_t sfi, uint8_t *out_data, uint16_t *out_len, uint8_t *sw1, uint8_t *sw2);
 int fmcos_update_binary(uint16_t offset, const uint8_t *data, uint8_t len, uint8_t sfi, uint8_t *sw1, uint8_t *sw2);
+int fmcos_get_balance(uint8_t app_type, uint32_t *balance, uint8_t *sw1, uint8_t *sw2);
 
 // Create functions
 int fmcos_create_df(uint16_t fid, uint8_t space, const uint8_t *df_name, uint8_t name_len, const uint8_t *perm, uint8_t *sw1, uint8_t *sw2);

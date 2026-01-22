@@ -683,7 +683,8 @@ static int CmdHFFMCOSExplore(const char *Cmd) {
 
             // Fallback probing if type is still Unknown (no FCI or unrecognized type)
             if (strcmp(type_str, "Unknown") == 0) {
-                uint8_t probe_data[4];
+                uint8_t probe_data[32];
+                uint16_t probe_len;
                 uint8_t probe_sw1, probe_sw2;
                 
                 // Try READ BINARY (offset 0, length 1)
@@ -691,15 +692,27 @@ static int CmdHFFMCOSExplore(const char *Cmd) {
                 if (probe_ret == PM3_SUCCESS && probe_sw1 == 0x90 && probe_sw2 == 0x00) {
                     type_str = "Binary EF (probe)";
                 } else if (probe_sw1 == 0x69 && probe_sw2 == 0x86) {
-                    // 6986 = Command not allowed (no current EF selected) = likely DF
+                    // 6986 = Command not allowed (no current EF) = likely DF
                     type_str = "DF (probe)";
+                } else if (probe_sw1 == 0x69 && probe_sw2 == 0x82) {
+                    // 6982 = Security not satisfied = protected EF
+                    type_str = "EF (protected)";
                 } else {
                     // Try READ RECORD (record 1)
-                    // Note: We don't have fmcos_read_record implemented yet
-                    // For now just mark as EF if READ BINARY failed with security error
-                    if (probe_sw1 == 0x69 && probe_sw2 == 0x82) {
-                        // 6982 = Security status not satisfied = likely protected EF
-                        type_str = "EF (protected)";
+                    probe_len = sizeof(probe_data);
+                    probe_ret = fmcos_read_record(1, 0, probe_data, &probe_len, &probe_sw1, &probe_sw2);
+                    if (probe_ret == PM3_SUCCESS && probe_sw1 == 0x90 && probe_sw2 == 0x00) {
+                        type_str = "Record EF (probe)";
+                    } else if (probe_sw1 == 0x69 && probe_sw2 == 0x82) {
+                        type_str = "Record EF (protected)";
+                    } else {
+                        // Try GET BALANCE (for wallet/e-purse)
+                        uint32_t balance;
+                        probe_ret = fmcos_get_balance(0x02, &balance, &probe_sw1, &probe_sw2);
+                        if (probe_ret == PM3_SUCCESS && probe_sw1 == 0x90 && probe_sw2 == 0x00) {
+                            type_str = "Wallet (probe)";
+                            snprintf(info_str, sizeof(info_str), "Balance: %u", balance);
+                        }
                     }
                 }
                 
