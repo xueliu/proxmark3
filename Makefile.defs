@@ -123,6 +123,7 @@ else
   DEFLDFLAGS =
 endif
 
+# TODO: change name or ?? for RISCV
 ifeq ($(DEBUG_ARM),1)
   APP_CFLAGS += -g
   SKIP_COMPRESSION=1

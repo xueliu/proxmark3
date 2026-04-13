@@ -1,6 +1,21 @@
 # Proxmark3 RISC-V Port Architecture
 
-This document outlines the key architectural decisions and technical learnings from porting the Proxmark3 firmware to the RISC-V architecture (specifically LiteX/VexRiscv).
+This document outlines the key architectural decisions, technical learnings, and current status of porting the Proxmark3 firmware to the RISC-V architecture (specifically LiteX/VexRiscv).
+
+## Executive Summary & Current Status
+
+**Goal:** Port the Proxmark3 firmware (originally ARMv4T) to a LiteX-based SoC on a Sipeed Tang Nano 20k FPGA (VexRiscv SMP, 32-bit).
+
+**Current Milestones Achieved:**
+*   **Build System Overhaul**: The `riscv64-unknown-elf-gcc` toolchain is fully integrated. The build successfully produces `fullimage.bin` and `fullimage.elf` for RAM execution. Legacy ARM targets (`bootrom`, `recovery`) are conditionally disabled for this platform to fix dependency conflicts.
+*   **Startup & Memory Layout**: The firmware is linked to execute purely from Main RAM (`0x40000000`). The RISC-V linker script (`common_riscv/linker.ld`) has been customized to include `Vector` (`.startos`) and `.commonarea` sections. A custom `crt0.S` sets up the Stack and Global Pointers and clears BSS.
+*   **Debugging & Verification**: A hardware-breakpoint setup script (`tools/pm4_debug.gdb`) allows catching the execution directly as the LiteX BIOS jumps to the firmware's entry point. Visual feedback (LED toggling) has been injected at the very first C instructions to confirm bootloader handoffs.
+*   **Architectural Mapping**: We have analyzed the legacy `bootrom` logic and constructed a comprehensive Hardware Abstraction Layer (HAL) mapping for transitioning from `AT91C_BASE_*` macros to LiteX CSRs.
+
+**Next Major Steps:**
+*   Complete the UART-based `usb_cdc` emulation.
+*   Establish the new FPGA (LF/HF) to CPU interfaces using LiteX CSRs.
+
 
 ## 0. Build Instructions (Quick Start)
 

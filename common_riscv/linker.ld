@@ -16,8 +16,11 @@ SECTIONS
 		KEEP(*crt0*(.text))
 		KEEP(*(.text.isr))
 
-		*(.text .stub .text.* .gnu.linkonce.t.*)
+		/* Vector() entry point must come right after crt0, before other code */
 		*(.startos)
+		KEEP(*(.startos))
+
+		*(.text .stub .text.* .gnu.linkonce.t.*)
 		_etext = .;
 	} > main_ram
 
