@@ -747,6 +747,12 @@ SRCS =  mifare/aiddesfire.c \
 		graph.c \
 		hidsio.c \
 		jansson_path.c \
+		fmcos/fmcos_apdu.c \
+		fmcos/fmcos_core.c \
+		fmcos/fmcos_crypto.c \
+		fmcos/fmcos_sm.c \
+		fmcos/fmcos_status.c \
+		fmcos/fmcos_txn.c \
 		fmcos/fmcos.c \
 		iso4217.c \
 		iso7816/apduinfo.c \
