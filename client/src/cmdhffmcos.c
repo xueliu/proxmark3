@@ -6,11 +6,6 @@
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
 // See LICENSE.txt for the text of the license.
 //-----------------------------------------------------------------------------
 // High frequency FMCOS (FM1208/FM1280) command handlers
@@ -21,6 +16,8 @@
 #include "pm3_cmd.h"
 #include "cmdhffmcos.h"
 #include "fmcos/fmcos.h"
+#include "fmcos/fmcos_core.h"
+#include "fmcos/fmcos_status.h"
 #include "cliparser.h"
 #include "cmdtrace.h"
 #include "cmdparser.h"
@@ -28,20 +25,18 @@
 #include <string.h>
 #include <stdlib.h>
 
+// Global context to retain state between commands
+static fmcos_session_t g_fmcos_cli_session;
+
 //-----------------------------------------------------------------------------
 // Helper Functions
 //-----------------------------------------------------------------------------
 
-/**
- * @brief Set verbose mode based on CLI argument.
- * @param ctx  CLI parser context.
- * @param idx  Argument index for verbose flag.
- */
 static void handle_verbose(CLIParserContext *ctx, int idx) {
     if (arg_get_lit(ctx, idx)) {
-        fmcos_set_verbose(true);
+        g_fmcos_cli_session.verbose = true;
     } else {
-        fmcos_set_verbose(false);
+        g_fmcos_cli_session.verbose = false;
     }
 }
 
@@ -49,9 +44,6 @@ static void handle_verbose(CLIParserContext *ctx, int idx) {
 // Command Handlers
 //-----------------------------------------------------------------------------
 
-/**
- * @brief hf fmcos select - Select file by FID.
- */
 static int CmdHFFMCOSSelect(const char *Cmd) {
     CLIParserContext *ctx;
     void *argtable[] = {
@@ -63,32 +55,26 @@ static int CmdHFFMCOSSelect(const char *Cmd) {
 
     CLIParserInit(&ctx, "hf fmcos select", "Select File", "hf fmcos select -f 3F00");
     CLIExecWithReturn(ctx, Cmd, argtable, true);
-    (void)argtable; // Silence unused variable warning
+    (void)argtable;
 
-    // Indices: 0=begin, 1=fid, 2=verbose
     handle_verbose(ctx, 2);
     
     const char *fid_str = arg_get_str(ctx, 1)->sval[0];
     uint16_t fid = strtoul(fid_str, NULL, 16);
     
-    uint8_t sw1, sw2;
-    uint8_t resp[256];
-    uint16_t resplen = sizeof(resp);
-    
-    int ret = fmcos_select_file(fid, resp, &resplen, &sw1, &sw2);
+    fmcos_resp_t resp;
+    int ret = fmcos_cmd_select_file(&g_fmcos_cli_session, fid, &resp);
     
     if (ret != PM3_SUCCESS) {
         PrintAndLogEx(ERR, "Communication failed");
     } else {
-        PrintAndLogEx(INFO, "Select SW: %02X%02X (%s)", sw1, sw2, fmcos_get_sw_desc(sw1, sw2));
+        PrintAndLogEx(INFO, "Select SW: %02X%02X (%s)", resp.sw1, resp.sw2, fmcos_status_to_string(resp.sw1, resp.sw2));
     }
 
-    // Note: Do NOT drop field here - keep session active for subsequent commands
     CLIParserFree(ctx);
     return ret;
 }
 
-// hf fmcos read -o <offset> -l <len> [--sfi <sfi>] [-v]
 static int CmdHFFMCOSRead(const char *Cmd) {
     CLIParserContext *ctx;
     void *argtable[] = {
@@ -104,41 +90,32 @@ static int CmdHFFMCOSRead(const char *Cmd) {
     CLIExecWithReturn(ctx, Cmd, argtable, true);
     (void)argtable;
 
-    // Indices: 0=begin, 1=off, 2=len, 3=sfi, 4=verbose
     handle_verbose(ctx, 4);
     
     int offset = arg_get_int(ctx, 1);
     int len = arg_get_int(ctx, 2);
-    // Checking count for optional args is better but 0 defaults is acceptable for now
     int sfi = arg_get_int(ctx, 3);
     
-    uint8_t *data = malloc(len);
-    if (!data) return PM3_EMALLOC;
-
-    uint8_t sw1, sw2;
-    
-    int ret = fmcos_read_binary((uint16_t)offset, (uint8_t)len, (uint8_t)sfi, data, &sw1, &sw2);
+    fmcos_resp_t resp;
+    int ret = fmcos_cmd_read_binary(&g_fmcos_cli_session, (uint16_t)offset, (uint8_t)len, (uint8_t)sfi, &resp);
     
     if (ret == PM3_SUCCESS) {
-        if (sw1 == 0x90 && sw2 == 0x00) {
-            char hex[4096] = {0}; // Increased buffer
-            // Safe hex dump (limit length)
-            int dump_len = (len > 1024) ? 1024 : len;
-            for(int i=0; i<dump_len; i++) sprintf(hex+i*2, "%02X", data[i]);
-            PrintAndLogEx(INFO, "Data: %s%s", hex, len > 1024 ? "..." : "");
+        if (resp.sw1 == 0x90 && resp.sw2 == 0x00) {
+            char hex[4096] = {0};
+            int dump_len = (resp.data_len > 1024) ? 1024 : resp.data_len;
+            for(int i=0; i<dump_len; i++) sprintf(hex+i*2, "%02X", resp.data[i]);
+            PrintAndLogEx(INFO, "Data: %s%s", hex, resp.data_len > 1024 ? "..." : "");
         } else {
-            PrintAndLogEx(ERR, "Read failed: %02X%02X (%s)", sw1, sw2, fmcos_get_sw_desc(sw1, sw2));
+            PrintAndLogEx(ERR, "Read failed: %02X%02X (%s)", resp.sw1, resp.sw2, fmcos_status_to_string(resp.sw1, resp.sw2));
         }
     } else {
         PrintAndLogEx(ERR, "Communication failed");
     }
     
-    free(data);
     CLIParserFree(ctx);
     return ret;
 }
 
-// hf fmcos update -o <offset> -d <data> [--sfi <sfi>] [-v]
 static int CmdHFFMCOSUpdate(const char *Cmd) {
     CLIParserContext *ctx;
     void *argtable[] = {
@@ -154,7 +131,6 @@ static int CmdHFFMCOSUpdate(const char *Cmd) {
     CLIExecWithReturn(ctx, Cmd, argtable, true);
     (void)argtable;
 
-    // Indices: 0=begin, 1=off, 2=data, 3=sfi, 4=verbose
     handle_verbose(ctx, 4);
     
     int offset = arg_get_int(ctx, 1);
@@ -170,11 +146,11 @@ static int CmdHFFMCOSUpdate(const char *Cmd) {
         data[len++] = (uint8_t)strtoul(byte_str, NULL, 16);
     }
     
-    uint8_t sw1, sw2;
-    int ret = fmcos_update_binary((uint16_t)offset, data, (uint8_t)len, (uint8_t)sfi, &sw1, &sw2);
+    fmcos_resp_t resp;
+    int ret = fmcos_cmd_update_binary(&g_fmcos_cli_session, (uint16_t)offset, data, (uint8_t)len, (uint8_t)sfi, &resp);
     
     if (ret == PM3_SUCCESS) {
-        PrintAndLogEx(INFO, "SW: %02X%02X (%s)", sw1, sw2, fmcos_get_sw_desc(sw1, sw2));
+        PrintAndLogEx(INFO, "SW: %02X%02X (%s)", resp.sw1, resp.sw2, fmcos_status_to_string(resp.sw1, resp.sw2));
     } else {
         PrintAndLogEx(ERR, "Communication failed");
     }
@@ -195,14 +171,12 @@ static int CmdHFFMCOSInfo(const char *Cmd) {
     CLIExecWithReturn(ctx, Cmd, argtable, true);
     (void)argtable;
     
-    // Indices: 0=begin, 1=verbose
     handle_verbose(ctx, 1);
-    int ret = fmcos_info();
+    int ret = fmcos_info(&g_fmcos_cli_session);
     CLIParserFree(ctx);
     return ret;
 }
 
-// hf fmcos auth --kid <kid> -k <key16> [-v]
 static int CmdHFFMCOSAuth(const char *Cmd) {
     CLIParserContext *ctx;
     void *argtable[] = {
@@ -236,9 +210,10 @@ static int CmdHFFMCOSAuth(const char *Cmd) {
         key[keylen++] = (uint8_t)strtoul(byte_str, NULL, 16);
     }
     
-    int ret = fmcos_ext_auth((uint8_t)kid, key, (uint8_t)keylen);
+    fmcos_resp_t resp;
+    int ret = fmcos_cmd_ext_auth(&g_fmcos_cli_session, (uint8_t)kid, key, (uint8_t)keylen, &resp);
     
-    if (ret == PM3_SUCCESS) {
+    if (ret == PM3_SUCCESS && fmcos_status_is_ok(resp.sw1, resp.sw2)) {
         PrintAndLogEx(SUCCESS, "External auth OK");
     } else {
         PrintAndLogEx(ERR, "External auth failed");
@@ -248,7 +223,6 @@ static int CmdHFFMCOSAuth(const char *Cmd) {
     return ret;
 }
 
-// hf fmcos verify --kid <kid> --pin <pin> [-v]
 static int CmdHFFMCOSVerify(const char *Cmd) {
     CLIParserContext *ctx;
     void *argtable[] = {
@@ -276,19 +250,19 @@ static int CmdHFFMCOSVerify(const char *Cmd) {
         pin[pinlen++] = (uint8_t)strtoul(byte_str, NULL, 16);
     }
     
-    int ret = fmcos_verify_pin((uint8_t)kid, pin, (uint8_t)pinlen);
+    fmcos_resp_t resp;
+    int ret = fmcos_cmd_verify_pin(&g_fmcos_cli_session, (uint8_t)kid, pin, (uint8_t)pinlen, &resp);
     
-    if (ret == PM3_SUCCESS) {
+    if (ret == PM3_SUCCESS && fmcos_status_is_ok(resp.sw1, resp.sw2)) {
         PrintAndLogEx(SUCCESS, "Verify OK");
     } else {
-        PrintAndLogEx(ERR, "Verify failed");
+        PrintAndLogEx(ERR, "Verify failed: %02X%02X (%s)", resp.sw1, resp.sw2, fmcos_status_to_string(resp.sw1, resp.sw2));
     }
     
     CLIParserFree(ctx);
     return ret;
 }
 
-// hf fmcos challenge -l <len> [-v]
 static int CmdHFFMCOSChallenge(const char *Cmd) {
     CLIParserContext *ctx;
     void *argtable[] = {
@@ -306,12 +280,12 @@ static int CmdHFFMCOSChallenge(const char *Cmd) {
     
     int len = arg_get_int_def(ctx, 1, 8);
     
-    uint8_t challenge[32] = {0};
-    int ret = fmcos_get_challenge((uint8_t)len, challenge);
+    fmcos_resp_t resp;
+    int ret = fmcos_cmd_get_challenge(&g_fmcos_cli_session, (uint8_t)len, &resp);
     
-    if (ret == PM3_SUCCESS) {
+    if (ret == PM3_SUCCESS && fmcos_status_is_ok(resp.sw1, resp.sw2)) {
         char hex[128] = {0};
-        for(int i=0; i<len; i++) sprintf(hex+i*2, "%02X", challenge[i]);
+        for(size_t i=0; i<resp.data_len; i++) sprintf(hex+i*2, "%02X", resp.data[i]);
         PrintAndLogEx(SUCCESS, "Challenge: %s", hex);
     } else {
         PrintAndLogEx(ERR, "Get challenge failed");
@@ -321,7 +295,6 @@ static int CmdHFFMCOSChallenge(const char *Cmd) {
     return ret;
 }
 
-// hf fmcos createdf -f <fid> --space <code> [--name <hex>] [--perm <hex>] [-v]
 static int CmdHFFMCOSCreateDF(const char *Cmd) {
     CLIParserContext *ctx;
     void *argtable[] = {
@@ -368,12 +341,12 @@ static int CmdHFFMCOSCreateDF(const char *Cmd) {
     }
 
     uint16_t fid = strtoul(fid_str, NULL, 16);
-    uint8_t sw1, sw2;
-    int ret = fmcos_create_df(fid, (uint8_t)space, name_len > 0 ? df_name : NULL, name_len, perm_ptr, &sw1, &sw2);
+    fmcos_resp_t resp;
+    int ret = fmcos_cmd_create_df(&g_fmcos_cli_session, fid, (uint8_t)space, name_len > 0 ? df_name : NULL, name_len, perm_ptr, &resp);
 
     if (ret == PM3_SUCCESS) {
-        PrintAndLogEx(INFO, "SW: %02X%02X (%s)", sw1, sw2, fmcos_get_sw_desc(sw1, sw2));
-        if (sw1 == 0x90 && sw2 == 0x00) PrintAndLogEx(SUCCESS, "DF created");
+        PrintAndLogEx(INFO, "SW: %02X%02X (%s)", resp.sw1, resp.sw2, fmcos_status_to_string(resp.sw1, resp.sw2));
+        if (resp.sw1 == 0x90 && resp.sw2 == 0x00) PrintAndLogEx(SUCCESS, "DF created");
     } else {
         PrintAndLogEx(ERR, "Communication failed");
     }
@@ -382,7 +355,6 @@ static int CmdHFFMCOSCreateDF(const char *Cmd) {
     return ret;
 }
 
-// hf fmcos createkey --slots <n> [--prop <hex>] [-v]
 static int CmdHFFMCOSCreateKey(const char *Cmd) {
     CLIParserContext *ctx;
     void *argtable[] = {
@@ -413,12 +385,12 @@ static int CmdHFFMCOSCreateKey(const char *Cmd) {
         prop_ptr = prop;
     }
 
-    uint8_t sw1, sw2;
-    int ret = fmcos_create_key_file((uint8_t)slots, prop_ptr, &sw1, &sw2);
+    fmcos_resp_t resp;
+    int ret = fmcos_cmd_create_key_file(&g_fmcos_cli_session, (uint8_t)slots, prop_ptr, &resp);
 
     if (ret == PM3_SUCCESS) {
-        PrintAndLogEx(INFO, "SW: %02X%02X (%s)", sw1, sw2, fmcos_get_sw_desc(sw1, sw2));
-        if (sw1 == 0x90 && sw2 == 0x00) PrintAndLogEx(SUCCESS, "Key file created");
+        PrintAndLogEx(INFO, "SW: %02X%02X (%s)", resp.sw1, resp.sw2, fmcos_status_to_string(resp.sw1, resp.sw2));
+        if (resp.sw1 == 0x90 && resp.sw2 == 0x00) PrintAndLogEx(SUCCESS, "Key file created");
     } else {
         PrintAndLogEx(ERR, "Communication failed");
     }
@@ -427,7 +399,6 @@ static int CmdHFFMCOSCreateKey(const char *Cmd) {
     return ret;
 }
 
-// hf fmcos createbin -f <fid> --size <n> [--perm <hex>] [-v]
 static int CmdHFFMCOSCreateBin(const char *Cmd) {
     CLIParserContext *ctx;
     void *argtable[] = {
@@ -461,12 +432,12 @@ static int CmdHFFMCOSCreateBin(const char *Cmd) {
     }
 
     uint16_t fid = strtoul(fid_str, NULL, 16);
-    uint8_t sw1, sw2;
-    int ret = fmcos_create_binary_ef(fid, (uint16_t)size, perm_ptr, &sw1, &sw2);
+    fmcos_resp_t resp;
+    int ret = fmcos_cmd_create_binary_ef(&g_fmcos_cli_session, fid, (uint16_t)size, perm_ptr, &resp);
 
     if (ret == PM3_SUCCESS) {
-        PrintAndLogEx(INFO, "SW: %02X%02X (%s)", sw1, sw2, fmcos_get_sw_desc(sw1, sw2));
-        if (sw1 == 0x90 && sw2 == 0x00) PrintAndLogEx(SUCCESS, "Binary EF created");
+        PrintAndLogEx(INFO, "SW: %02X%02X (%s)", resp.sw1, resp.sw2, fmcos_status_to_string(resp.sw1, resp.sw2));
+        if (resp.sw1 == 0x90 && resp.sw2 == 0x00) PrintAndLogEx(SUCCESS, "Binary EF created");
     } else {
         PrintAndLogEx(ERR, "Communication failed");
     }
@@ -475,7 +446,6 @@ static int CmdHFFMCOSCreateBin(const char *Cmd) {
     return ret;
 }
 
-// hf fmcos createrec -f <fid> --type <fixed|variable|cyclic> --len <n> --count <n> [--sfi <n>] [--perm <hex>] [-v]
 static int CmdHFFMCOSCreateRec(const char *Cmd) {
     CLIParserContext *ctx;
     void *argtable[] = {
@@ -528,12 +498,12 @@ static int CmdHFFMCOSCreateRec(const char *Cmd) {
     }
 
     uint16_t fid = strtoul(fid_str, NULL, 16);
-    uint8_t sw1, sw2;
-    int ret = fmcos_create_record_ef(fid, rec_type, (uint8_t)sfi, (uint8_t)rec_count, (uint8_t)rec_len, perm_ptr, &sw1, &sw2);
+    fmcos_resp_t resp;
+    int ret = fmcos_cmd_create_record_ef(&g_fmcos_cli_session, fid, rec_type, (uint8_t)sfi, (uint8_t)rec_count, (uint8_t)rec_len, perm_ptr, &resp);
 
     if (ret == PM3_SUCCESS) {
-        PrintAndLogEx(INFO, "SW: %02X%02X (%s)", sw1, sw2, fmcos_get_sw_desc(sw1, sw2));
-        if (sw1 == 0x90 && sw2 == 0x00) PrintAndLogEx(SUCCESS, "Record EF created");
+        PrintAndLogEx(INFO, "SW: %02X%02X (%s)", resp.sw1, resp.sw2, fmcos_status_to_string(resp.sw1, resp.sw2));
+        if (resp.sw1 == 0x90 && resp.sw2 == 0x00) PrintAndLogEx(SUCCESS, "Record EF created");
     } else {
         PrintAndLogEx(ERR, "Communication failed");
     }
@@ -542,10 +512,6 @@ static int CmdHFFMCOSCreateRec(const char *Cmd) {
     return ret;
 }
 
-// ---------------------------------------------------------------------------
-// hf fmcos explore [--mode ef|df] [--start XXXX] [--end XXXX] [-v]
-// Scans file system for EFs or DFs in given range
-// ---------------------------------------------------------------------------
 static const char* fmcos_file_type_name(uint8_t type_byte) {
     switch (type_byte) {
         case 0x38: return "DF";
@@ -580,10 +546,8 @@ static int CmdHFFMCOSExplore(const char *Cmd) {
     CLIExecWithReturn(ctx, Cmd, argtable, true);
     (void)argtable;
 
-    // Parse arguments
     handle_verbose(ctx, 5);
 
-    // Mode
     bool df_mode = false;
     struct arg_str *mode_arg = arg_get_str(ctx, 1);
     if (mode_arg->count > 0) {
@@ -593,7 +557,6 @@ static int CmdHFFMCOSExplore(const char *Cmd) {
         }
     }
 
-    // Determine default range based on mode
     uint16_t start_fid, end_fid;
     if (df_mode) {
         start_fid = 0xDF01;
@@ -603,7 +566,6 @@ static int CmdHFFMCOSExplore(const char *Cmd) {
         end_fid = 0x0020;
     }
 
-    // Override with user values if provided
     struct arg_str *start_arg = arg_get_str(ctx, 2);
     if (start_arg->count > 0) {
         start_fid = strtoul(start_arg->sval[0], NULL, 16);
@@ -613,7 +575,6 @@ static int CmdHFFMCOSExplore(const char *Cmd) {
         end_fid = strtoul(end_arg->sval[0], NULL, 16);
     }
 
-    // Base FID to return to after each select
     uint16_t base_fid = 0x3F00;
     struct arg_str *base_arg = arg_get_str(ctx, 4);
     if (base_arg->count > 0) {
@@ -622,51 +583,42 @@ static int CmdHFFMCOSExplore(const char *Cmd) {
 
     CLIParserFree(ctx);
 
-    // Print header
     PrintAndLogEx(INFO, "Exploring %s Range %04X-%04X...", df_mode ? "DF" : "EF", start_fid, end_fid);
     PrintAndLogEx(INFO, "------------------------------------------------------------");
     PrintAndLogEx(INFO, "%-6s %-18s %-6s %-30s", "FID", "Type", "Size", "Info");
     PrintAndLogEx(INFO, "------------------------------------------------------------");
 
     int found_count = 0;
-    uint8_t resp[256];
-    uint16_t resplen;
-    uint8_t sw1, sw2;
+    fmcos_resp_t resp;
 
     for (uint32_t fid = start_fid; fid <= end_fid; fid++) {
-        resplen = sizeof(resp);
-        int ret = fmcos_select_file((uint16_t)fid, resp, &resplen, &sw1, &sw2);
+        int ret = fmcos_cmd_select_file(&g_fmcos_cli_session, (uint16_t)fid, &resp);
 
-        if (ret == PM3_SUCCESS && sw1 == 0x90 && sw2 == 0x00) {
+        if (ret == PM3_SUCCESS && resp.sw1 == 0x90 && resp.sw2 == 0x00) {
             found_count++;
 
             const char *type_str = "Unknown";
             char size_str[16] = "-";
             char info_str[64] = "";
 
-            // Parse FCI response
-            if (resplen >= 1) {
-                uint8_t type_byte = resp[0];
+            if (resp.data_len >= 1) {
+                uint8_t type_byte = resp.data[0];
                 type_str = fmcos_file_type_name(type_byte);
 
-                // Try to extract size (bytes 1-2 for some types)
-                if (resplen >= 3 && type_byte != 0x6F && type_byte != 0x38) {
-                    uint16_t size_val = (resp[1] << 8) | resp[2];
+                if (resp.data_len >= 3 && type_byte != 0x6F && type_byte != 0x38) {
+                    uint16_t size_val = (resp.data[1] << 8) | resp.data[2];
                     snprintf(size_str, sizeof(size_str), "%u", size_val);
                 }
 
-                // For DFs (0x38 or 0x6F), try to extract name from tag 84
                 if (type_byte == 0x38 || type_byte == 0x6F) {
-                    // Search for tag 84 in response
-                    for (int i = 0; i < (int)resplen - 2; i++) {
-                        if (resp[i] == 0x84) {
-                            uint8_t name_len = resp[i + 1];
-                            if (name_len > 0 && i + 2 + name_len <= (int)resplen) {
-                                // Convert hex name to ASCII if printable
+                    for (int i = 0; i < (int)resp.data_len - 2; i++) {
+                        if (resp.data[i] == 0x84) {
+                            uint8_t name_len = resp.data[i + 1];
+                            if (name_len > 0 && i + 2 + name_len <= (int)resp.data_len) {
                                 char name_buf[32] = {0};
                                 int pos = 0;
                                 for (int j = 0; j < name_len && pos < 30; j++) {
-                                    uint8_t c = resp[i + 2 + j];
+                                    uint8_t c = resp.data[i + 2 + j];
                                     if (c >= 0x20 && c < 0x7F) {
                                         name_buf[pos++] = c;
                                     }
@@ -681,64 +633,47 @@ static int CmdHFFMCOSExplore(const char *Cmd) {
                 }
             }
 
-            // Fallback probing if type is still Unknown (no FCI or unrecognized type)
             if (strcmp(type_str, "Unknown") == 0) {
-                uint8_t probe_data[32];
-                uint16_t probe_len;
-                uint8_t probe_sw1, probe_sw2;
+                fmcos_resp_t probe_resp;
                 
-                // Try READ BINARY (offset 0, length 1)
-                int probe_ret = fmcos_read_binary(0, 1, 0, probe_data, &probe_sw1, &probe_sw2);
-                if (probe_ret == PM3_SUCCESS && probe_sw1 == 0x90 && probe_sw2 == 0x00) {
+                int probe_ret = fmcos_cmd_read_binary(&g_fmcos_cli_session, 0, 1, 0, &probe_resp);
+                if (probe_ret == PM3_SUCCESS && probe_resp.sw1 == 0x90 && probe_resp.sw2 == 0x00) {
                     type_str = "Binary EF (probe)";
-                } else if (probe_sw1 == 0x69 && probe_sw2 == 0x86) {
-                    // 6986 = Command not allowed (no current EF) = likely DF
+                } else if (probe_resp.sw1 == 0x69 && probe_resp.sw2 == 0x86) {
                     type_str = "DF (probe)";
-                } else if (probe_sw1 == 0x69 && probe_sw2 == 0x82) {
-                    // 6982 = Security not satisfied = protected EF
+                } else if (probe_resp.sw1 == 0x69 && probe_resp.sw2 == 0x82) {
                     type_str = "EF (protected)";
                 } else {
-                    // Try READ RECORD (record 1)
-                    probe_len = sizeof(probe_data);
-                    probe_ret = fmcos_read_record(1, 0, probe_data, &probe_len, &probe_sw1, &probe_sw2);
-                    if (probe_ret == PM3_SUCCESS && probe_sw1 == 0x90 && probe_sw2 == 0x00) {
+                    probe_ret = fmcos_cmd_read_record(&g_fmcos_cli_session, 1, 0, &probe_resp);
+                    if (probe_ret == PM3_SUCCESS && probe_resp.sw1 == 0x90 && probe_resp.sw2 == 0x00) {
                         type_str = "Record EF (probe)";
-                    } else if (probe_sw1 == 0x69 && probe_sw2 == 0x82) {
+                    } else if (probe_resp.sw1 == 0x69 && probe_resp.sw2 == 0x82) {
                         type_str = "Record EF (protected)";
                     } else {
-                        // Try GET BALANCE (for wallet/e-purse)
                         uint32_t balance;
-                        probe_ret = fmcos_get_balance(0x02, &balance, &probe_sw1, &probe_sw2);
-                        if (probe_ret == PM3_SUCCESS && probe_sw1 == 0x90 && probe_sw2 == 0x00) {
+                        probe_ret = fmcos_cmd_get_balance(&g_fmcos_cli_session, 0x02, &balance);
+                        if (probe_ret == PM3_SUCCESS) {
                             type_str = "Wallet (probe)";
                             snprintf(info_str, sizeof(info_str), "Balance: %u", balance);
                         }
                     }
                 }
                 
-                // Re-select the file after probe (probe might have changed state)
-                resplen = sizeof(resp);
-                fmcos_select_file((uint16_t)fid, resp, &resplen, &sw1, &sw2);
+                fmcos_cmd_select_file(&g_fmcos_cli_session, (uint16_t)fid, &resp);
             }
 
             PrintAndLogEx(SUCCESS, "%04X   %-18s %-6s %-30s", fid, type_str, size_str, info_str);
-
-            // Return to base DF for next iteration
-            resplen = sizeof(resp);
-            fmcos_select_file(base_fid, resp, &resplen, &sw1, &sw2);
+            fmcos_cmd_select_file(&g_fmcos_cli_session, base_fid, &resp);
         }
     }
 
     PrintAndLogEx(INFO, "------------------------------------------------------------");
     PrintAndLogEx(SUCCESS, "Found %d files", found_count);
 
-    fmcos_drop_field();
+    fmcos_session_drop_field(&g_fmcos_cli_session);
     return PM3_SUCCESS;
 }
 
-/**
- * @brief hf fmcos off - Drop RF field and terminate session.
- */
 static int CmdHFFMCOSOff(const char *Cmd) {
     CLIParserContext *ctx;
     void *argtable[] = {
@@ -753,9 +688,318 @@ static int CmdHFFMCOSOff(const char *Cmd) {
     (void)argtable;
     CLIParserFree(ctx);
 
-    fmcos_drop_field();
+    fmcos_session_drop_field(&g_fmcos_cli_session);
     PrintAndLogEx(SUCCESS, "RF field dropped, session terminated");
     return PM3_SUCCESS;
+}
+
+static int CmdHFFMCOSWriteKey(const char *Cmd) {
+    CLIParserContext *ctx;
+    void *argtable[] = {
+        arg_param_begin,
+        arg_int1(NULL, "kid", "<int>", "Key ID"),
+        arg_int1("t", "type", "<int>", "Key Type"),
+        arg_int0("a", "add", "<0|1>", "0: update, 1: add (default: 1)"),
+        arg_str1("d", "data", "<hex>", "Payload (Rights + key data)"),
+        arg_lit0("v", "verbose", "Verbose output"),
+        arg_param_end
+    };
+
+    CLIParserInit(&ctx, "hf fmcos writekey", "Write/Update Key", "hf fmcos writekey --kid 0 -t 36 -a 1 -d F0F40598C4608B786AF1992343E91A076670AE7C");
+    CLIExecWithReturn(ctx, Cmd, argtable, true);
+    (void)argtable;
+
+    handle_verbose(ctx, 5);
+    
+    int kid = arg_get_int(ctx, 1);
+    int ktype = arg_get_int(ctx, 2);
+    int is_add = 1;
+    if (arg_get_int_count(ctx, 3) > 0) is_add = arg_get_int(ctx, 3);
+    const char *data_str = arg_get_str(ctx, 4)->sval[0];
+    
+    uint8_t data[64];
+    size_t slen = strlen(data_str);
+    int datalen = 0;
+    for (size_t i = 0; i < slen && datalen < 64; i += 2) {
+        char byte_str[3] = {data_str[i], (i+1 < slen) ? data_str[i+1] : 0, 0};
+        data[datalen++] = (uint8_t)strtoul(byte_str, NULL, 16);
+    }
+    
+    fmcos_resp_t resp;
+    int ret = fmcos_cmd_write_key(&g_fmcos_cli_session, is_add, ktype, kid, data, datalen, &resp);
+    
+    if (ret == PM3_SUCCESS && fmcos_status_is_ok(resp.sw1, resp.sw2)) {
+        PrintAndLogEx(SUCCESS, "Write Key OK");
+    } else {
+        PrintAndLogEx(ERR, "Write Key failed (SW: %02X%02X)", resp.sw1, resp.sw2);
+    }
+    CLIParserFree(ctx);
+    return ret;
+}
+
+static int CmdHFFMCOSBalance(const char *Cmd) {
+    CLIParserContext *ctx;
+    void *argtable[] = {
+        arg_param_begin,
+        arg_int0(NULL, "app", "<1|2>", "1: ED/Passbook, 2: Wallet (default: 2)"),
+        arg_param_end
+    };
+
+    CLIParserInit(&ctx, "hf fmcos balance", "Get Balance", "hf fmcos balance --app 2");
+    CLIExecWithReturn(ctx, Cmd, argtable, true);
+    (void)argtable;
+
+    int app_type = 2;
+    if (arg_get_int_count(ctx, 1) > 0) app_type = arg_get_int(ctx, 1);
+    
+    uint32_t balance = 0;
+    int ret = fmcos_cmd_get_balance(&g_fmcos_cli_session, app_type, &balance);
+    
+    if (ret == PM3_SUCCESS) {
+        PrintAndLogEx(SUCCESS, "Balance (%s): %u", app_type == 1 ? "EP" : "Wallet", balance);
+    } else {
+        PrintAndLogEx(ERR, "Get Balance failed");
+    }
+    CLIParserFree(ctx);
+    return ret;
+}
+
+static int CmdHFFMCOSLoad(const char *Cmd) {
+    CLIParserContext *ctx;
+    void *argtable[] = {
+        arg_param_begin,
+        arg_int1("k", "kid", "<int>", "Key ID"),
+        arg_int0("a", "app", "<1|2>", "1: EP, 2: Wallet (default: 2)"),
+        arg_int1("v", "amt", "<int>", "Amount to Load"),
+        arg_str1("t", "term", "<hex>", "Terminal ID (6 bytes hex)"),
+        arg_str1("m", "mkey", "<hex>", "Master Key (16 bytes hex)"),
+        arg_param_end
+    };
+
+    CLIParserInit(&ctx, "hf fmcos load", "Load PBOC E-Deposit", "hf fmcos load --kid 0 --app 2 --amt 1000 --term 666666666666 --mkey A9E6E145F5DF09500A58EEF8575D49DB");
+    CLIExecWithReturn(ctx, Cmd, argtable, true);
+    (void)argtable;
+
+    int kid = arg_get_int(ctx, 1);
+    int app_type = 2;
+    if (arg_get_int_count(ctx, 2) > 0) app_type = arg_get_int(ctx, 2);
+    int amt_val = arg_get_int(ctx, 3);
+    const char *term_str = arg_get_str(ctx, 4)->sval[0];
+    const char *mkey_str = arg_get_str(ctx, 5)->sval[0];
+    
+    uint8_t amt[4] = { (amt_val >> 24) & 0xFF, (amt_val >> 16) & 0xFF, (amt_val >> 8) & 0xFF, amt_val & 0xFF };
+    
+    uint8_t term[6] = {0};
+    for (size_t i = 0; i < strlen(term_str) && i < 12; i += 2) {
+        char byte_str[3] = {term_str[i], (i+1 < strlen(term_str)) ? term_str[i+1] : 0, 0};
+        term[i/2] = (uint8_t)strtoul(byte_str, NULL, 16);
+    }
+    
+    uint8_t mkey[16] = {0};
+    for (size_t i = 0; i < strlen(mkey_str) && i < 32; i += 2) {
+        char byte_str[3] = {mkey_str[i], (i+1 < strlen(mkey_str)) ? mkey_str[i+1] : 0, 0};
+        mkey[i/2] = (uint8_t)strtoul(byte_str, NULL, 16);
+    }
+    
+    int ret = fmcos_txn_init_load(&g_fmcos_cli_session, kid, app_type, amt, term, mkey, 16);
+    if (ret != PM3_SUCCESS) {
+        PrintAndLogEx(ERR, "Init Load failed");
+        CLIParserFree(ctx);
+        return ret;
+    }
+    PrintAndLogEx(INFO, "MAC1 Verified!");
+    
+    uint8_t dummy_date[4] = {0x20, 0x26, 0x04, 0x13};
+    uint8_t dummy_time[3] = {0x12, 0x00, 0x00};
+    
+    ret = fmcos_txn_credit(&g_fmcos_cli_session, dummy_date, dummy_time);
+    if (ret == PM3_SUCCESS) {
+        PrintAndLogEx(SUCCESS, "Credit Load OK. Wallet Updated.");
+    } else {
+        PrintAndLogEx(ERR, "Credit Load failed");
+    }
+    
+    CLIParserFree(ctx);
+    return ret;
+}
+
+static int CmdHFFMCOSPurchase(const char *Cmd) {
+    CLIParserContext *ctx;
+    void *argtable[] = {
+        arg_param_begin,
+        arg_int1("k", "kid", "<int>", "Key ID"),
+        arg_int0("a", "app", "<1|2>", "1: EP, 2: Wallet (default: 2)"),
+        arg_int1("v", "amt", "<int>", "Amount to Purchase"),
+        arg_str1("t", "term", "<hex>", "Terminal ID (6 bytes hex)"),
+        arg_str1("m", "mkey", "<hex>", "Master Key (16 bytes hex)"),
+        arg_param_end
+    };
+
+    CLIParserInit(&ctx, "hf fmcos purchase", "Purchase PBOC E-Deposit", "hf fmcos purchase --kid 0 --app 2 --amt 50 --term 666666666666 --mkey EB18CE6986C820970E876219052CE0CF");
+    CLIExecWithReturn(ctx, Cmd, argtable, true);
+    (void)argtable;
+
+    int kid = arg_get_int(ctx, 1);
+    int app_type = 2;
+    if (arg_get_int_count(ctx, 2) > 0) app_type = arg_get_int(ctx, 2);
+    int amt_val = arg_get_int(ctx, 3);
+    const char *term_str = arg_get_str(ctx, 4)->sval[0];
+    const char *mkey_str = arg_get_str(ctx, 5)->sval[0];
+    
+    uint8_t amt[4] = { (amt_val >> 24) & 0xFF, (amt_val >> 16) & 0xFF, (amt_val >> 8) & 0xFF, amt_val & 0xFF };
+    
+    uint8_t term[6] = {0};
+    for (size_t i = 0; i < strlen(term_str) && i < 12; i += 2) {
+        char byte_str[3] = {term_str[i], (i+1 < strlen(term_str)) ? term_str[i+1] : 0, 0};
+        term[i/2] = (uint8_t)strtoul(byte_str, NULL, 16);
+    }
+    
+    uint8_t mkey[16] = {0};
+    for (size_t i = 0; i < strlen(mkey_str) && i < 32; i += 2) {
+        char byte_str[3] = {mkey_str[i], (i+1 < strlen(mkey_str)) ? mkey_str[i+1] : 0, 0};
+        mkey[i/2] = (uint8_t)strtoul(byte_str, NULL, 16);
+    }
+    
+    int ret = fmcos_txn_init_purchase(&g_fmcos_cli_session, kid, app_type, amt, term, mkey, 16);
+    if (ret != PM3_SUCCESS) {
+        PrintAndLogEx(ERR, "Init Purchase failed");
+        CLIParserFree(ctx);
+        return ret;
+    }
+    PrintAndLogEx(INFO, "Purchase initialized!");
+    
+    uint8_t dummy_date[4] = {0x20, 0x26, 0x04, 0x13};
+    uint8_t dummy_time[3] = {0x12, 0x00, 0x00};
+    
+    ret = fmcos_txn_debit(&g_fmcos_cli_session, dummy_date, dummy_time);
+    if (ret == PM3_SUCCESS) {
+        PrintAndLogEx(SUCCESS, "Debit OK.");
+    } else {
+        PrintAndLogEx(ERR, "Debit failed");
+    }
+    
+    CLIParserFree(ctx);
+    return ret;
+}
+
+static int CmdHFFMCOSPin(const char *Cmd) {
+    CLIParserContext *ctx;
+    void *argtable[] = {
+        arg_param_begin,
+        arg_str1("o", "op", "<change|unblock|reload>", "PIN operation"),
+        arg_int1("k", "kid", "<int>", "Key ID"),
+        arg_str0("p", "pin", "<hex>", "Old or Blocked PIN"),
+        arg_str1("n", "new", "<hex>", "New PIN"),
+        arg_str0("m", "mkey", "<hex>", "Maintenance/Unblock Key"),
+        arg_param_end
+    };
+
+    CLIParserInit(&ctx, "hf fmcos pin", "PIN Management", "hf fmcos pin --op change --kid 0 --pin 123456 --new 13371337");
+    CLIExecWithReturn(ctx, Cmd, argtable, true);
+    (void)argtable;
+
+    const char *op = arg_get_str(ctx, 1)->sval[0];
+    int kid = arg_get_int(ctx, 2);
+    
+    struct arg_str *arg_pin = arg_get_str(ctx, 3);
+    const char *pin_str = (arg_pin->count > 0) ? arg_pin->sval[0] : "";
+    
+    struct arg_str *arg_new = arg_get_str(ctx, 4);
+    const char *new_str = (arg_new->count > 0) ? arg_new->sval[0] : "";
+    
+    struct arg_str *arg_mkey = arg_get_str(ctx, 5);
+    const char *mkey_str = (arg_mkey->count > 0) ? arg_mkey->sval[0] : "";
+
+    uint8_t pin[16] = {0}, newpin[16] = {0}, mkey[16] = {0};
+    int pin_len = 0, new_len = 0, mkey_len = 0;
+
+    size_t slen;
+    slen = strlen(pin_str);
+    for (size_t i = 0; i < slen && pin_len < 16; i += 2) {
+        char byte_str[3] = {pin_str[i], (i+1 < slen) ? pin_str[i+1] : 0, 0};
+        pin[pin_len++] = (uint8_t)strtoul(byte_str, NULL, 16);
+    }
+
+    slen = strlen(new_str);
+    for (size_t i = 0; i < slen && new_len < 16; i += 2) {
+        char byte_str[3] = {new_str[i], (i+1 < slen) ? new_str[i+1] : 0, 0};
+        newpin[new_len++] = (uint8_t)strtoul(byte_str, NULL, 16);
+    }
+
+    slen = strlen(mkey_str);
+    for (size_t i = 0; i < slen && mkey_len < 16; i += 2) {
+        char byte_str[3] = {mkey_str[i], (i+1 < slen) ? mkey_str[i+1] : 0, 0};
+        mkey[mkey_len++] = (uint8_t)strtoul(byte_str, NULL, 16);
+    }
+
+    int ret = PM3_EINVARG;
+    fmcos_resp_t resp;
+
+    if (strcmp(op, "change") == 0) {
+        ret = fmcos_cmd_change_pin(&g_fmcos_cli_session, kid, pin, newpin, new_len, &resp);
+    } else if (strcmp(op, "unblock") == 0) {
+        ret = fmcos_cmd_pin_unblock(&g_fmcos_cli_session, kid, newpin, new_len, mkey, mkey_len, &resp);
+    } else if (strcmp(op, "reload") == 0) {
+        ret = fmcos_cmd_reload_pin(&g_fmcos_cli_session, kid, newpin, new_len, mkey, mkey_len, &resp);
+    } else {
+        PrintAndLogEx(ERR, "Invalid operation");
+    }
+
+    if (ret == PM3_SUCCESS && fmcos_status_is_ok(resp.sw1, resp.sw2)) {
+        PrintAndLogEx(SUCCESS, "PIN %s OK", op);
+    } else if (ret == PM3_SUCCESS) {
+        PrintAndLogEx(ERR, "PIN %s failed (SW1: %02X SW2: %02X)", op, resp.sw1, resp.sw2);
+    }
+    
+    CLIParserFree(ctx);
+    return ret;
+}
+
+static int CmdHFFMCOSLock(const char *Cmd) {
+    CLIParserContext *ctx;
+    void *argtable[] = {
+        arg_param_begin,
+        arg_str1("o", "op", "<card|app|unblock>", "Lock operation"),
+        arg_str1("m", "mkey", "<hex>", "Maintenance Key"),
+        arg_param_end
+    };
+
+    CLIParserInit(&ctx, "hf fmcos lock", "App/Card Locking", "hf fmcos lock --op app --mkey ...");
+    CLIExecWithReturn(ctx, Cmd, argtable, true);
+    (void)argtable;
+
+    const char *op = arg_get_str(ctx, 1)->sval[0];
+    const char *mkey_str = arg_get_str(ctx, 2)->sval[0];
+    
+    uint8_t mkey[16];
+    size_t slen = strlen(mkey_str);
+    int mkey_len = 0;
+    for (size_t i = 0; i < slen && mkey_len < 16; i += 2) {
+        char byte_str[3] = {mkey_str[i], (i+1 < slen) ? mkey_str[i+1] : 0, 0};
+        mkey[mkey_len++] = (uint8_t)strtoul(byte_str, NULL, 16);
+    }
+
+    int ret = PM3_EINVARG;
+    fmcos_resp_t resp;
+
+    if (strcmp(op, "card") == 0) {
+        ret = fmcos_cmd_card_block(&g_fmcos_cli_session, mkey, mkey_len, &resp);
+    } else if (strcmp(op, "app") == 0) {
+        ret = fmcos_cmd_app_block(&g_fmcos_cli_session, 0, mkey, mkey_len, &resp); // temporary block
+    } else if (strcmp(op, "unblock") == 0) {
+        ret = fmcos_cmd_app_unblock(&g_fmcos_cli_session, mkey, mkey_len, &resp);
+    } else {
+        PrintAndLogEx(ERR, "Invalid lock operation");
+    }
+
+    if (ret == PM3_SUCCESS && fmcos_status_is_ok(resp.sw1, resp.sw2)) {
+        PrintAndLogEx(SUCCESS, "Lock %s OK", op);
+    } else if (ret == PM3_SUCCESS) {
+        PrintAndLogEx(ERR, "Lock %s failed (SW1: %02X SW2: %02X)", op, resp.sw1, resp.sw2);
+    }
+    
+    CLIParserFree(ctx);
+    return ret;
 }
 
 static int CmdHelp(const char *Cmd);
@@ -775,6 +1019,12 @@ static command_t CommandTable[] = {
     {"verify", CmdHFFMCOSVerify, AlwaysAvailable, "Verify PIN"},
     {"challenge", CmdHFFMCOSChallenge, AlwaysAvailable, "Get challenge"},
     {"explore", CmdHFFMCOSExplore, AlwaysAvailable, "Explore file system"},
+    {"writekey", CmdHFFMCOSWriteKey, AlwaysAvailable, "Write/Update Key"},
+    {"balance", CmdHFFMCOSBalance, AlwaysAvailable, "Get E-Deposit Balance"},
+    {"load", CmdHFFMCOSLoad, AlwaysAvailable, "Load PBOC E-Deposit (Init + Credit)"},
+    {"purchase", CmdHFFMCOSPurchase, AlwaysAvailable, "Purchase PBOC E-Deposit (Init + Debit)"},
+    {"pin", CmdHFFMCOSPin, AlwaysAvailable, "Manage PINs (change, unblock, reload)"},
+    {"lock", CmdHFFMCOSLock, AlwaysAvailable, "Lock/Unblock Application or Card"},
     {NULL, NULL, NULL, NULL}
 };
 
